@@ -730,305 +730,471 @@ def _mpl_rgb(rgb_tuple):
 
 def render_png_direct(fp, png_path):
     """
-    Renders a professional architectural floor plan PNG directly via matplotlib.
-    Includes room fills, walls, labels, dimensions, doors, windows, legend, and title block.
+    Professional CAD-style floor plan renderer using matplotlib directly.
+    Features: filled wall rectangles with brick hatch, room texture fills,
+    furniture symbols, double-line walls, full dimension chain, D/W labels,
+    north arrow, legend, and title block.
     """
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import matplotlib.patches as mpatches
-    from matplotlib.patches import FancyArrowPatch, Arc
-    from matplotlib.lines import Line2D
+    from matplotlib.patches import Arc, FancyArrowPatch
     import numpy as np
 
-    BG      = '#F5F0E8'
-    WALL_EXT_C = '#1A1A1A'
-    WALL_INT_C = '#444444'
-    DIM_C   = '#333366'
-    LABEL_C = '#111111'
-    DIM_LABEL_C = '#222255'
-    BOUND_C = '#888888'
-    LEGEND_BG = '#FDFDF5'
+    BG        = '#F5F0E8'
+    WALL_DARK = '#1C1C1C'
+    WALL_INT  = '#383838'
+    DIM_C     = '#333375'
+    BOUND_C   = '#999999'
+    LABEL_C   = '#111111'
+    DIM_LC    = '#223388'
+    LBG       = '#FDFDF5'
+    DOOR_C    = '#445566'
+    WIN_C     = '#3366AA'
+    WIN_FILL  = '#C2D8F0'
+
+    # Wall thicknesses (in metres, matching engine constants)
+    EXT_T = WALL_EXT_T   # 0.23
+    INT_T = WALL_INT_T   # 0.115
 
     rooms_list = list(fp.rooms.values()) if isinstance(fp.rooms, dict) else list(fp.rooms)
 
-    # Canvas: plan area + legend strip on right + title at bottom
-    LEGEND_W = 3.2   # metres equivalent width for legend panel
-    MARGIN   = 1.5   # margin around plot in metres
-    plot_total_w = fp.plot_w + LEGEND_W + MARGIN * 2
-    plot_total_h = fp.plot_d + MARGIN * 2 + 2.5  # +2.5 for title block
-
-    scale = 42  # pixels per metre (for A2-like display)
-
-    fig_w = plot_total_w * scale / 96.0   # inches at 96 dpi; saved at 150 dpi
-    fig_h = plot_total_h * scale / 96.0
-    fig, ax = plt.subplots(figsize=(max(fig_w, 18), max(fig_h, 13)))
+    LEGEND_W = 3.4
+    fig_w = max(fp.plot_w + LEGEND_W + 3.0, 20)
+    fig_h = max(fp.plot_d + 4.5, 14)
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     ax.set_facecolor(BG)
     fig.patch.set_facecolor(BG)
     ax.set_aspect('equal')
     ax.axis('off')
 
-    # Coordinate origin: building starts at (setback_side, setback_rear)
-    ox = fp.setback_side  # x-offset of building net area
-    oy = fp.setback_rear  # y-offset
+    ox = fp.setback_side
+    oy = fp.setback_rear
 
-    # ── Property boundary (dashed) ─────────────────────────────────────────
-    bnd = mpatches.Rectangle(
-        (0, 0), fp.plot_w, fp.plot_d,
-        linewidth=1.2, edgecolor=BOUND_C, facecolor='none',
-        linestyle='--', zorder=1
-    )
-    ax.add_patch(bnd)
-    ax.text(fp.plot_w / 2, fp.plot_d + 0.18, 'Property Boundary',
-            ha='center', va='bottom', fontsize=7, color=BOUND_C, style='italic')
+    # ─── Helper: dimension arrow ──────────────────────────────────────────
+    def dim_arrow(x1, y1, x2, y2, label, perpdir='T', gap=0.3, fs=7.2, col=DIM_C):
+        """Draw a <-> dimension annotation with label on a background box."""
+        mx, my = (x1+x2)/2, (y1+y2)/2
+        kw = dict(arrowstyle='<->', color=col, lw=0.9,
+                  mutation_scale=8, shrinkA=0, shrinkB=0)
+        ax.annotate('', xy=(x2, y2), xytext=(x1, y1), arrowprops=kw, zorder=30)
+        # Extension ticks
+        if abs(y2 - y1) < 1e-3:  # horizontal
+            for xp in (x1, x2):
+                ax.plot([xp, xp], [y1 - 0.06, y1 + 0.06], color=col, lw=0.8, zorder=30)
+            lx, ly = mx, my + (gap if perpdir == 'T' else -gap)
+        else:  # vertical
+            for yp in (y1, y2):
+                ax.plot([x1 - 0.06, x1 + 0.06], [yp, yp], color=col, lw=0.8, zorder=30)
+            lx, ly = mx + (-gap if perpdir == 'L' else gap), my
+        ax.text(lx, ly, label, ha='center', va='center', fontsize=fs,
+                color=col, fontweight='bold',
+                bbox=dict(fc=BG, ec='none', pad=1.2), zorder=31)
 
-    # ── Setback dimension arrows ───────────────────────────────────────────
-    def draw_dimension(ax, x1, y1, x2, y2, label, side='top', offset=0.35, color=DIM_C):
-        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-        ax.annotate('', xy=(x2, y2), xytext=(x1, y1),
-                    arrowprops=dict(arrowstyle='<->', color=color, lw=1.0))
-        lx, ly = mx, my
-        if side == 'top':    ly += offset
-        elif side == 'bot':  ly -= offset
-        elif side == 'left': lx -= offset
-        elif side == 'right':lx += offset
-        ax.text(lx, ly, label, ha='center', va='center', fontsize=7.5,
-                color=color, fontweight='bold',
-                bbox=dict(fc=BG, ec='none', pad=1))
+    # ─── Helper: draw wall as filled rectangle ────────────────────────────
+    def draw_wall_rect(wall, zorder=5):
+        t = wall.thickness
+        col = WALL_DARK if wall.wall_type == 'exterior' else WALL_INT
+        hatch = '//' if wall.wall_type == 'exterior' else '+'
+        lw = 0.4
+        if wall.direction == 'H':
+            x0 = ox + min(wall.x1, wall.x2)
+            y0 = oy + wall.y1 - t / 2
+            w  = abs(wall.x2 - wall.x1)
+            d  = t
+        else:
+            x0 = ox + wall.x1 - t / 2
+            y0 = oy + min(wall.y1, wall.y2)
+            w  = t
+            d  = abs(wall.y2 - wall.y1)
+        if w < 1e-4 or d < 1e-4:
+            return
+        # Solid fill
+        p = mpatches.Rectangle((x0, y0), w, d,
+                                facecolor=col, edgecolor=col, linewidth=lw, zorder=zorder)
+        ax.add_patch(p)
 
-    # Overall plot dimensions (outside boundary)
-    draw_dimension(ax, 0, fp.plot_d + 0.6, fp.plot_w, fp.plot_d + 0.6,
-                   f'{fp.plot_w:.0f}m', side='top', offset=0.18, color=DIM_C)
-    draw_dimension(ax, -0.65, 0, -0.65, fp.plot_d,
-                   f'{fp.plot_d:.0f}m', side='left', offset=0.2, color=DIM_C)
+    # ─── Property boundary ────────────────────────────────────────────────
+    ax.add_patch(mpatches.Rectangle((0, 0), fp.plot_w, fp.plot_d,
+        lw=1.2, edgecolor=BOUND_C, facecolor='none', linestyle='--', zorder=1))
+    ax.text(fp.plot_w/2, fp.plot_d + 0.2, 'Property Boundary',
+            ha='center', va='bottom', fontsize=7.5, color=BOUND_C, style='italic')
 
-    # Setback labels
-    ax.text(fp.plot_w / 2, oy * 0.5, f'Sides / Rear {fp.setback_rear:.0f}m',
-            ha='center', va='center', fontsize=6.5, color=BOUND_C)
-    ax.text(fp.plot_w / 2, fp.plot_d - fp.setback_front * 0.5,
-            f'Front {fp.setback_front:.0f}m',
-            ha='center', va='center', fontsize=6.5, color=BOUND_C)
+    # Setback dimension lines (inner tick style)
+    dim_arrow(0, fp.plot_d + 0.85, fp.plot_w, fp.plot_d + 0.85,
+              f'{fp.plot_w:.0f}m', perpdir='T', gap=0.18, fs=9, col=DIM_C)
+    dim_arrow(-0.9, 0, -0.9, fp.plot_d,
+              f'{fp.plot_d:.0f}m', perpdir='L', gap=0.22, fs=9, col=DIM_C)
+    # Front & rear setback dims
+    dim_arrow(ox/2, oy, ox/2, oy+fp.net_d,
+              f'', perpdir='L', gap=0.15, fs=6, col=BOUND_C)
+    ax.text(fp.plot_w/2, oy/2, f'Rear / Side  {fp.setback_rear:.0f}m',
+            ha='center', va='center', fontsize=6.5, color=BOUND_C, zorder=3)
+    ax.text(fp.plot_w/2, fp.plot_d - fp.setback_front/2,
+            f'Front  {fp.setback_front:.0f}m',
+            ha='center', va='center', fontsize=6.5, color=BOUND_C, zorder=3)
 
-    # Wall thickness labels
-    ax.text(ox, fp.plot_d + 0.08, '230mm', ha='center', va='bottom',
-            fontsize=5.5, color='#555555')
-    ax.text(ox + WALL_EXT_T * 3, fp.plot_d + 0.08, '115mm',
-            ha='center', va='bottom', fontsize=5.5, color='#777777')
-
-    # ── Room fills ────────────────────────────────────────────────────────
+    # ─── Room fills + subtle patterns ─────────────────────────────────────
+    ROOM_HATCH = {
+        'toilet_attached':  '...',
+        'toilet_common':    '...',
+        'kitchen':          '++',
+        'staircase':        '////',
+        'pooja':            'xx',
+    }
     for room in rooms_list:
-        rgb = ROOM_RGB.get(room.room_type, (248, 248, 248))
-        patch = mpatches.Rectangle(
+        rgb = ROOM_RGB.get(room.room_type, (248, 248, 245))
+        fc  = _mpl_rgb(rgb)
+        ht  = ROOM_HATCH.get(room.room_type, '')
+        ec  = (0.7, 0.7, 0.7) if ht else 'none'
+        p = mpatches.Rectangle(
             (ox + room.x, oy + room.y), room.width, room.depth,
-            facecolor=_mpl_rgb(rgb), edgecolor='none', zorder=2
-        )
-        ax.add_patch(patch)
+            facecolor=fc, edgecolor=ec, linewidth=0.3,
+            hatch=ht, zorder=2)
+        ax.add_patch(p)
 
-    # ── Interior walls ────────────────────────────────────────────────────
+    # ─── Draw walls as filled rectangles ─────────────────────────────────
     for wall in fp.walls:
-        lw = 5.0 if wall.wall_type == 'exterior' else 2.5
-        col = WALL_EXT_C if wall.wall_type == 'exterior' else WALL_INT_C
-        ax.plot([ox + wall.x1, ox + wall.x2], [oy + wall.y1, oy + wall.y2],
-                color=col, linewidth=lw, solid_capstyle='butt', zorder=5)
+        draw_wall_rect(wall, zorder=5)
 
-    # ── Exterior boundary rectangle ───────────────────────────────────────
-    net_rect = mpatches.Rectangle(
+    # Exterior net rectangle (thick border on top of fills)
+    ax.add_patch(mpatches.Rectangle(
         (ox, oy), fp.net_w, fp.net_d,
-        linewidth=5.0, edgecolor=WALL_EXT_C, facecolor='none', zorder=6
-    )
-    ax.add_patch(net_rect)
+        lw=4.5, edgecolor=WALL_DARK, facecolor='none', zorder=6))
 
-    # ── Doors ─────────────────────────────────────────────────────────────
-    door_labels_used = {}
+    # ─── Furniture symbols ────────────────────────────────────────────────
+    def frect(x, y, w, d, fc='#DDDDCC', ec='#777766', lw=0.7, z=11):
+        ax.add_patch(mpatches.Rectangle((x,y), w, d,
+            facecolor=fc, edgecolor=ec, linewidth=lw, zorder=z))
+
+    def fcircle(cx, cy, r, fc='#CCCCBB', ec='#777766', z=11):
+        ax.add_patch(mpatches.Circle((cx, cy), r,
+            facecolor=fc, edgecolor=ec, linewidth=0.7, zorder=z))
+
+    for room in rooms_list:
+        x0 = ox + room.x + 0.1
+        y0 = oy + room.y + 0.1
+        rw = room.width - 0.2
+        rd = room.depth - 0.2
+        rt = room.room_type
+
+        if rt in ('master_bedroom', 'bedroom_2', 'bedroom_3', 'bedroom_4'):
+            bw = min(rw * 0.9, 1.85)
+            bd = min(rd * 0.55, 2.0)
+            bx = x0 + (rw - bw) / 2
+            by = y0 + rd - bd
+            # Bed frame
+            frect(bx, by, bw, bd, fc='#E8E2D5', ec='#665544', lw=1.0, z=11)
+            # Headboard
+            frect(bx, by + bd - 0.3, bw, 0.3, fc='#C8B898', ec='#665544', lw=0.8, z=12)
+            # Pillows
+            frect(bx + 0.12, by + bd - 0.28, bw * 0.38, 0.22, fc='#F8F5EE', ec='#AAAAAA', lw=0.5, z=13)
+            frect(bx + bw * 0.5 + 0.02, by + bd - 0.28, bw * 0.38, 0.22, fc='#F8F5EE', ec='#AAAAAA', lw=0.5, z=13)
+            # Side table
+            frect(x0, by + bd * 0.4, 0.4, 0.4, fc='#D4C8B0', ec='#665544', lw=0.5, z=11)
+            # Wardrobe
+            if rw > 3.0:
+                frect(x0, y0, min(rw, 1.5), 0.6, fc='#D0C4A0', ec='#665544', lw=0.8, z=11)
+
+        elif rt in ('living', 'dining'):
+            # 3-seater sofa
+            sw = min(rw * 0.65, 2.2)
+            frect(x0, y0, sw, 0.85, fc='#D8D0C0', ec='#776655', lw=0.9, z=11)
+            frect(x0, y0 + 0.62, sw, 0.25, fc='#C8BCA8', ec='#776655', lw=0.5, z=12)
+            # Seat cushions
+            for ci in range(3):
+                frect(x0 + ci * sw/3 + 0.05, y0 + 0.08, sw/3 - 0.1, 0.5,
+                      fc='#E0D8C8', ec='#998877', lw=0.4, z=13)
+            # Side sofa
+            frect(x0 + sw + 0.15, y0, 0.85, min(rd * 0.45, 1.4), fc='#D8D0C0', ec='#776655', lw=0.9, z=11)
+            # Coffee table
+            frect(x0 + 0.3, y0 + 1.0, sw - 0.6, 0.55, fc='#B8A888', ec='#665544', lw=0.8, z=11)
+            # TV unit (opposite wall)
+            frect(x0 + rw - 0.45, y0 + 0.3, 0.4, min(rd - 0.6, 1.6), fc='#C8C0B0', ec='#665544', lw=0.6, z=11)
+            # Dining table (if large enough)
+            if rd > 3.0 and rt == 'dining':
+                tx = x0 + (rw - 1.2) / 2
+                ty = y0 + rd - 1.3
+                frect(tx, ty, 1.2, 0.75, fc='#B8A878', ec='#665544', lw=0.9, z=11)
+                for ci in range(3):
+                    frect(tx + ci * 0.35 + 0.05, ty - 0.28, 0.28, 0.28, fc='#D4C8A8', ec='#887766', lw=0.4, z=12)
+                    frect(tx + ci * 0.35 + 0.05, ty + 0.75, 0.28, 0.28, fc='#D4C8A8', ec='#887766', lw=0.4, z=12)
+
+        elif rt == 'kitchen':
+            # L-shaped counter (dark granite)
+            frect(x0, y0 + rd - 0.6, rw, 0.6, fc='#555555', ec='#333333', lw=0.8, z=11)
+            frect(x0, y0, 0.6, rd, fc='#555555', ec='#333333', lw=0.8, z=11)
+            # Sink
+            frect(x0 + rw - 0.7, y0 + rd - 0.55, 0.6, 0.45, fc='#888888', ec='#555', lw=0.6, z=12)
+            fcircle(x0 + rw - 0.4, y0 + rd - 0.33, 0.1, fc='#AAAAAA', z=13)
+            # Stove burners
+            for bx2, by2 in [(x0+0.1, y0+rd-0.52), (x0+0.1, y0+rd-0.15)]:
+                fcircle(bx2 + 0.15, by2 + 0.08, 0.13, fc='#666666', ec='#444', z=12)
+            # Refrigerator
+            frect(x0 + rw - 0.65, y0, 0.55, 0.7, fc='#DDDDDD', ec='#999', lw=0.6, z=11)
+
+        elif rt in ('toilet_attached', 'toilet_common'):
+            # WC (isometric oval seat)
+            wc_x = x0 + rw / 2 - 0.2; wc_y = y0 + rd - 0.55
+            frect(wc_x, wc_y, 0.4, 0.22, fc='#EEEEEE', ec='#999', lw=0.6, z=12)
+            ax.add_patch(mpatches.Ellipse((wc_x + 0.2, wc_y + 0.28), 0.38, 0.26,
+                         facecolor='#F8F8F8', edgecolor='#AAAAAA', lw=0.7, zorder=12))
+            # Wash basin
+            bs_x = x0 + 0.05; bs_y = y0 + 0.08
+            frect(bs_x, bs_y, 0.42, 0.38, fc='#E8E8E8', ec='#888', lw=0.6, z=12)
+            ax.add_patch(mpatches.Ellipse((bs_x + 0.21, bs_y + 0.19), 0.3, 0.22,
+                         facecolor='#F5F5F5', edgecolor='#AAAAAA', lw=0.5, zorder=13))
+            fcircle(bs_x + 0.21, bs_y + 0.19, 0.06, fc='#CCCCCC', z=14)
+
+        elif rt == 'verandah':
+            # Chairs
+            frect(x0 + 0.1, y0 + 0.1, 0.45, 0.45, fc='#D4C8A0', ec='#776655', lw=0.6, z=11)
+            frect(x0 + rw - 0.55, y0 + 0.1, 0.45, 0.45, fc='#D4C8A0', ec='#776655', lw=0.6, z=11)
+            # Small table
+            frect(x0 + rw/2 - 0.22, y0 + 0.12, 0.44, 0.4, fc='#C4B890', ec='#665544', lw=0.7, z=12)
+
+        elif rt == 'staircase':
+            # Treads
+            n_treads = max(6, int(rw / 0.28))
+            tw = rw / n_treads
+            for ti in range(n_treads):
+                shade = 0.82 - ti * 0.04
+                frect(x0 + ti * tw, y0, tw, rd,
+                      fc=(shade, shade, shade - 0.05), ec='#888', lw=0.3, z=11)
+            # Stair arrow
+            ax.annotate('', xy=(x0 + rw - 0.1, y0 + rd/2),
+                        xytext=(x0 + 0.1, y0 + rd/2),
+                        arrowprops=dict(arrowstyle='->', color='#333', lw=1.2), zorder=12)
+            ax.text(x0 + rw/2, y0 + rd/2 + 0.12, 'Up to Floor',
+                    ha='center', fontsize=5.5, color='#333', zorder=13)
+
+    # ─── Doors ────────────────────────────────────────────────────────────
+    door_legend = {}
     for i, door in enumerate(fp.doors):
         wall = door.wall
-        dx = ox + wall.x1 + door.position * (wall.x2 - wall.x1)
-        dy = oy + wall.y1 + door.position * (wall.y2 - wall.y1)
-        tag = f'D{i + 1}'
-        door_labels_used[tag] = door.label or door.door_type
+        # Centre of door on wall
+        dc_x = ox + wall.x1 + door.position * (wall.x2 - wall.x1)
+        dc_y = oy + wall.y1 + door.position * (wall.y2 - wall.y1)
+        hw = door.width / 2.0
+        tag = f'D{i+1}'
+        door_legend[tag] = door.label or 'Door'
 
         if wall.direction == 'H':
-            # Door opening gap (white strip)
-            ax.plot([dx - door.width / 2, dx + door.width / 2],
-                    [dy, dy], color=BG, linewidth=8, zorder=7)
-            # Swing arc
-            hinge_x = dx - door.width / 2
-            arc = Arc((hinge_x, dy), door.width * 2, door.width * 2,
-                      angle=0, theta1=0, theta2=90,
-                      color='#555577', linewidth=1.0, zorder=8)
+            # Paint wall gap white
+            ax.add_patch(mpatches.Rectangle(
+                (dc_x - hw, dc_y - wall.thickness/2 - 0.01), door.width, wall.thickness + 0.02,
+                facecolor=BG, edgecolor='none', zorder=7))
+            hx, hy = dc_x - hw, dc_y
+            # Leaf line
+            ax.plot([hx, hx + door.width], [hy, hy], color=DOOR_C, lw=1.5, zorder=8)
+            # Arc: swing into room (approximate)
+            swing_dir = 1 if door.hinge_side == 'left' else -1
+            arc = Arc((hx, hy), door.width * 2, door.width * 2,
+                      angle=0, theta1=0, theta2=90 * swing_dir if swing_dir > 0 else 270,
+                      color=DOOR_C, lw=1.0, zorder=8)
+            if swing_dir > 0:
+                arc = Arc((hx, hy), door.width*2, door.width*2, angle=0, theta1=0, theta2=90, color=DOOR_C, lw=1.0, zorder=8)
+            else:
+                arc = Arc((hx + door.width, hy), door.width*2, door.width*2, angle=90, theta1=0, theta2=90, color=DOOR_C, lw=1.0, zorder=8)
             ax.add_patch(arc)
-            ax.plot([hinge_x, hinge_x + door.width], [dy, dy],
-                    color='#555577', linewidth=1.2, zorder=8)
-            ax.text(dx, dy + 0.18, tag, ha='center', va='bottom',
-                    fontsize=6, color='#222244', fontweight='bold', zorder=9)
+            ax.text(dc_x, dc_y + 0.22, tag, ha='center', va='bottom',
+                    fontsize=6.5, fontweight='bold', color='#222244', zorder=9,
+                    bbox=dict(fc='white', ec='none', pad=0.5, alpha=0.8))
         else:
-            ax.plot([dx, dx], [dy - door.width / 2, dy + door.width / 2],
-                    color=BG, linewidth=8, zorder=7)
-            hinge_y = dy - door.width / 2
-            arc = Arc((dx, hinge_y), door.width * 2, door.width * 2,
-                      angle=0, theta1=0, theta2=90,
-                      color='#555577', linewidth=1.0, zorder=8)
+            ax.add_patch(mpatches.Rectangle(
+                (dc_x - wall.thickness/2 - 0.01, dc_y - hw), wall.thickness + 0.02, door.width,
+                facecolor=BG, edgecolor='none', zorder=7))
+            hx, hy = dc_x, dc_y - hw
+            ax.plot([hx, hx], [hy, hy + door.width], color=DOOR_C, lw=1.5, zorder=8)
+            arc = Arc((hx, hy), door.width*2, door.width*2, angle=0, theta1=0, theta2=90, color=DOOR_C, lw=1.0, zorder=8)
             ax.add_patch(arc)
-            ax.plot([dx, dx], [hinge_y, hinge_y + door.width],
-                    color='#555577', linewidth=1.2, zorder=8)
-            ax.text(dx + 0.18, dy, tag, ha='left', va='center',
-                    fontsize=6, color='#222244', fontweight='bold', zorder=9)
+            ax.text(dc_x + 0.22, dc_y, tag, ha='left', va='center',
+                    fontsize=6.5, fontweight='bold', color='#222244', zorder=9,
+                    bbox=dict(fc='white', ec='none', pad=0.5, alpha=0.8))
 
-    # ── Windows ───────────────────────────────────────────────────────────
-    win_labels_used = {}
+    # ─── Windows ──────────────────────────────────────────────────────────
+    win_legend = {}
     for i, win in enumerate(fp.windows):
         wall = win.wall
-        wx = ox + wall.x1 + win.position * (wall.x2 - wall.x1)
-        wy = oy + wall.y1 + win.position * (wall.y2 - wall.y1)
-        tag = f'W{i + 1}'
-        win_labels_used[tag] = 'Window'
-        t = wall.thickness / 2.0
-        if wall.direction == 'H':
-            for off in [-t, 0, t]:
-                ax.plot([wx - win.width / 2, wx + win.width / 2],
-                        [wy + off, wy + off], color='#3366AA',
-                        linewidth=1.3, zorder=8)
-            # White gap in wall
-            ax.plot([wx - win.width / 2, wx + win.width / 2],
-                    [wy, wy], color='#B8D4F0', linewidth=5, zorder=7)
-            ax.text(wx, wy + 0.25, tag, ha='center', va='bottom',
-                    fontsize=6, color='#3355AA', fontweight='bold', zorder=9)
-        else:
-            for off in [-t, 0, t]:
-                ax.plot([wx + off, wx + off],
-                        [wy - win.width / 2, wy + win.width / 2],
-                        color='#3366AA', linewidth=1.3, zorder=8)
-            ax.plot([wx, wx], [wy - win.width / 2, wy + win.width / 2],
-                    color='#B8D4F0', linewidth=5, zorder=7)
-            ax.text(wx + 0.25, wy, tag, ha='left', va='center',
-                    fontsize=6, color='#3355AA', fontweight='bold', zorder=9)
+        wc_x = ox + wall.x1 + win.position * (wall.x2 - wall.x1)
+        wc_y = oy + wall.y1 + win.position * (wall.y2 - wall.y1)
+        hw = win.width / 2.0
+        t  = wall.thickness / 2.0
+        tag = f'W{i+1}'
+        win_legend[tag] = 'Window'
 
-    # ── Room labels + dimensions ──────────────────────────────────────────
+        if wall.direction == 'H':
+            # Fill the wall opening with glazing color
+            ax.add_patch(mpatches.Rectangle(
+                (wc_x - hw, wc_y - t), win.width, t*2,
+                facecolor=WIN_FILL, edgecolor='none', zorder=7))
+            for off in (-t, 0, t):
+                ax.plot([wc_x - hw, wc_x + hw], [wc_y + off, wc_y + off],
+                        color=WIN_C, lw=1.4, zorder=8)
+            ax.text(wc_x, wc_y + t + 0.22, tag, ha='center', va='bottom',
+                    fontsize=6.5, fontweight='bold', color=WIN_C, zorder=9,
+                    bbox=dict(fc='white', ec='none', pad=0.5, alpha=0.8))
+        else:
+            ax.add_patch(mpatches.Rectangle(
+                (wc_x - t, wc_y - hw), t*2, win.width,
+                facecolor=WIN_FILL, edgecolor='none', zorder=7))
+            for off in (-t, 0, t):
+                ax.plot([wc_x + off, wc_x + off], [wc_y - hw, wc_y + hw],
+                        color=WIN_C, lw=1.4, zorder=8)
+            ax.text(wc_x + t + 0.22, wc_y, tag, ha='left', va='center',
+                    fontsize=6.5, fontweight='bold', color=WIN_C, zorder=9,
+                    bbox=dict(fc='white', ec='none', pad=0.5, alpha=0.8))
+
+    # ─── Room labels + dimensions ─────────────────────────────────────────
     for room in rooms_list:
         cx = ox + room.x + room.width / 2.0
         cy = oy + room.y + room.depth / 2.0
         label = ROOM_LABELS.get(room.room_type,
                                  room.room_type.replace('_', ' ').upper())
-        area_min = room.width * room.depth
-        fs_label = 8.5 if area_min >= 10 else 6.5 if area_min >= 4 else 5.5
-        fs_dim   = 7.0 if area_min >= 10 else 5.5 if area_min >= 4 else 4.5
+        area = room.width * room.depth
+        fs_n = 9.0 if area >= 12 else 7.5 if area >= 6 else 6.0
+        fs_d = 7.5 if area >= 12 else 6.2 if area >= 6 else 5.2
 
-        # Bold room name
-        ax.text(cx, cy + 0.12, label,
-                ha='center', va='center',
-                fontsize=fs_label, fontweight='bold', color=LABEL_C,
-                multialignment='center', zorder=10,
-                wrap=True)
-        # Dimension below
-        dim_text = f'{room.width:.1f}m x {room.depth:.1f}m'
-        ax.text(cx, cy - 0.22, dim_text,
-                ha='center', va='center',
-                fontsize=fs_dim, color=DIM_LABEL_C, zorder=10)
+        for line_i, line in enumerate(label.split('\n')):
+            yo = 0.2 * (len(label.split('\n')) - 1) / 2.0 - line_i * 0.2
+            ax.text(cx, cy + 0.15 + yo, line,
+                    ha='center', va='center', fontsize=fs_n,
+                    fontweight='bold', color=LABEL_C, zorder=15)
+        ax.text(cx, cy - 0.25, f'{room.width:.1f}m x {room.depth:.1f}m',
+                ha='center', va='center', fontsize=fs_d, color=DIM_LC, zorder=15)
 
-    # ── Internal room dimension lines ─────────────────────────────────────
+    # ─── Full external dimension chain ────────────────────────────────────
+    # Top: overall width
+    dim_arrow(0, fp.plot_d + 0.85, fp.plot_w, fp.plot_d + 0.85,
+              f'{fp.plot_w:.0f}m', perpdir='T', gap=0.18, fs=9.5, col=DIM_C)
+    # Left: overall height
+    dim_arrow(-0.9, 0, -0.9, fp.plot_d,
+              f'{fp.plot_d:.0f}m', perpdir='L', gap=0.22, fs=9.5, col=DIM_C)
+
+    # Setback sub-dimensions (top chain below overall)
+    chain_y = fp.plot_d + 0.48
+    dim_arrow(0, chain_y, ox, chain_y, f'{fp.setback_side:.0f}m', perpdir='T', gap=0.12, fs=6.5, col=BOUND_C)
+    dim_arrow(ox, chain_y, ox + fp.net_w, chain_y, f'{fp.net_w:.0f}m', perpdir='T', gap=0.12, fs=7.5, col=DIM_C)
+    dim_arrow(ox + fp.net_w, chain_y, fp.plot_w, chain_y, f'{fp.setback_side:.0f}m', perpdir='T', gap=0.12, fs=6.5, col=BOUND_C)
+
+    # Left chain: setback heights
+    chain_x = -0.52
+    dim_arrow(chain_x, 0, chain_x, oy, f'{fp.setback_rear:.0f}m', perpdir='L', gap=0.14, fs=6.5, col=BOUND_C)
+    dim_arrow(chain_x, oy, chain_x, oy + fp.net_d, f'{fp.net_d:.0f}m', perpdir='L', gap=0.14, fs=7.5, col=DIM_C)
+    dim_arrow(chain_x, oy + fp.net_d, chain_x, fp.plot_d, f'{fp.setback_front:.0f}m', perpdir='L', gap=0.14, fs=6.5, col=BOUND_C)
+
+    # Per-room horizontal dims (inside room top edge)
     for room in rooms_list:
-        if room.width * room.depth < 3:
+        if room.width * room.depth < 4.0:
             continue
         rx, ry = ox + room.x, oy + room.y
-        rw, rd = room.width, room.depth
-        # Horizontal dimension (top of room)
-        draw_dimension(ax, rx + 0.05, ry + rd + 0.25,
-                       rx + rw - 0.05, ry + rd + 0.25,
-                       f'{rw:.1f}m', side='top', offset=0.13, color='#444488')
+        dim_arrow(rx + 0.05, ry + room.depth + 0.28,
+                  rx + room.width - 0.05, ry + room.depth + 0.28,
+                  f'{room.width:.1f}m', perpdir='T', gap=0.12, fs=6.0, col='#446688')
 
-    # ── North Arrow ───────────────────────────────────────────────────────
-    na_x = fp.plot_w + LEGEND_W * 0.5
+    # ─── North Arrow ──────────────────────────────────────────────────────
+    na_x = fp.plot_w + LEGEND_W * 0.45
     na_y = fp.plot_d + 0.3
-    r = 0.55
-    ax.add_patch(mpatches.Circle((na_x, na_y), r, fill=False,
-                                  edgecolor='#222', linewidth=1.5, zorder=20))
-    ax.annotate('', xy=(na_x, na_y + r * 0.8), xytext=(na_x, na_y - r * 0.15),
-                arrowprops=dict(arrowstyle='->', color='#111',
-                                lw=2.5, mutation_scale=14), zorder=21)
-    tri_x = [na_x - 0.15, na_x, na_x + 0.15, na_x - 0.15]
-    tri_y = [na_y, na_y + r * 0.85, na_y, na_y]
-    ax.fill(tri_x, tri_y, color='#111111', zorder=22)
-    ax.text(na_x, na_y + r + 0.12, 'N', ha='center', va='bottom',
-            fontsize=13, fontweight='bold', color='#111', zorder=22)
+    R = 0.62
+    ax.add_patch(mpatches.Circle((na_x, na_y), R, fill=False,
+                                  edgecolor='#111', lw=1.8, zorder=25))
+    ax.plot([na_x, na_x], [na_y - R * 0.7, na_y + R * 0.85],
+            color='#111', lw=1.5, zorder=26)
+    ax.fill([na_x - 0.18, na_x, na_x + 0.18],
+            [na_y, na_y + R * 0.92, na_y], color='#111', zorder=27)
+    ax.text(na_x, na_y + R + 0.15, 'N', ha='center', va='bottom',
+            fontsize=14, fontweight='bold', color='#111', zorder=28)
 
-    # ── Legend panel ──────────────────────────────────────────────────────
-    lx0 = fp.plot_w + ox + 0.4
-    ly0 = fp.plot_d - 0.4
+    # ─── Legend panel ─────────────────────────────────────────────────────
+    lx0 = fp.plot_w + ox + 0.45
+    ly0 = fp.plot_d - 0.35
+    leg_w = LEGEND_W - 0.7
 
-    legend_items = []
-    seen_types = []
+    # Gather unique room types
+    seen, leg_items = [], []
     for room in rooms_list:
-        if room.room_type not in seen_types:
-            seen_types.append(room.room_type)
-            rgb = ROOM_RGB.get(room.room_type, (248, 248, 248))
-            short = room.room_type.replace('_', ' ').title()[:8]
-            legend_items.append((short, rgb))
+        if room.room_type not in seen:
+            seen.append(room.room_type)
+            rgb = ROOM_RGB.get(room.room_type, (248, 248, 245))
+            abbr = {'master_bedroom': 'BR1', 'bedroom_2': 'BR2', 'bedroom_3': 'BR3',
+                    'bedroom_4': 'BR4', 'living': 'Dwg', 'dining': 'Din',
+                    'kitchen': 'Kit', 'toilet_attached': 'Tlt1',
+                    'toilet_common': 'Tlt2', 'utility': 'Utl',
+                    'verandah': 'Vda', 'pooja': 'Pja', 'staircase': 'Str'
+                    }.get(room.room_type, room.room_type[:4].title())
+            full_name = ROOM_LABELS.get(room.room_type,
+                        room.room_type.replace('_', ' ').title())
+            leg_items.append((abbr, full_name.replace('\n', '/'), rgb))
 
-    # Background for legend
-    leg_h = len(legend_items) * 0.42 + 0.8
-    leg_w = LEGEND_W - 0.6
-    leg_rect = mpatches.FancyBboxPatch(
-        (lx0 - 0.1, ly0 - leg_h), leg_w, leg_h,
-        boxstyle='round,pad=0.08', facecolor=LEGEND_BG,
-        edgecolor='#AAAAAA', linewidth=0.8, zorder=15
-    )
-    ax.add_patch(leg_rect)
-    ax.text(lx0 + leg_w / 2 - 0.1, ly0 - 0.05, 'LEGEND',
-            ha='center', va='top', fontsize=9, fontweight='bold',
-            color='#111111', zorder=16)
+    leg_h = len(leg_items) * 0.37 + 0.8
+    ax.add_patch(mpatches.FancyBboxPatch(
+        (lx0 - 0.12, ly0 - leg_h), leg_w, leg_h,
+        boxstyle='round,pad=0.1', facecolor=LBG, edgecolor='#BBBBBB', lw=0.9, zorder=18))
+    ax.text(lx0 + leg_w/2 - 0.12, ly0 - 0.08, 'LEGEND',
+            ha='center', va='top', fontsize=9, fontweight='bold', color='#111', zorder=19)
+    ax.plot([lx0 - 0.1, lx0 + leg_w - 0.15],
+            [ly0 - 0.42, ly0 - 0.42], color='#AAAAAA', lw=0.7, zorder=19)
 
-    for ki, (short, rgb) in enumerate(legend_items):
-        item_y = ly0 - 0.55 - ki * 0.42
-        swatch = mpatches.Rectangle((lx0, item_y - 0.15), 0.35, 0.32,
-                                     facecolor=_mpl_rgb(rgb),
-                                     edgecolor='#444', linewidth=0.7, zorder=16)
-        ax.add_patch(swatch)
-        ax.text(lx0 + 0.44, item_y + 0.01, short,
-                va='center', fontsize=7, color='#222', zorder=16)
+    col_abbr_x = lx0 + 0.02
+    col_swatch_x = lx0 + 0.55
+    col_name_x = lx0 + 0.95
 
-    # Door/Window legend
-    ly_dw = ly0 - leg_h - 0.5
-    ax.text(lx0 + leg_w / 2 - 0.1, ly_dw, 'Symbols',
-            ha='center', va='top', fontsize=8, fontweight='bold',
-            color='#111111', zorder=16)
-    sym_items = list(door_labels_used.items()) + list(win_labels_used.items())
-    for si, (tag, lbl) in enumerate(sym_items[:10]):
-        sy = ly_dw - 0.35 - si * 0.32
-        ax.text(lx0, sy, tag, fontsize=7, fontweight='bold',
-                color='#333366', va='center', zorder=16)
-        ax.text(lx0 + 0.55, sy, lbl[:14], fontsize=6.5,
-                color='#333', va='center', zorder=16)
+    for ki, (abbr, full_name, rgb) in enumerate(leg_items):
+        iy = ly0 - 0.55 - ki * 0.37
+        ax.text(col_abbr_x, iy, abbr, va='center', fontsize=7,
+                fontweight='bold', color='#333366', zorder=19)
+        ax.add_patch(mpatches.Rectangle((col_swatch_x, iy - 0.12), 0.33, 0.27,
+            facecolor=_mpl_rgb(rgb), edgecolor='#777', lw=0.6, zorder=19))
+        ax.text(col_name_x, iy, full_name[:16], va='center',
+                fontsize=6.5, color='#222', zorder=19)
 
-    # ── Wall thickness callout ─────────────────────────────────────────────
-    ax.text(fp.plot_w + ox + 0.4, oy + fp.net_d / 2 - 0.5,
-            f'Ext. Wall: 230mm\nInt. Wall: 115mm\n\nNet Area:\n'
-            f'{fp.net_w:.1f}m × {fp.net_d:.1f}m\n\nScale 1:50',
-            fontsize=7, color='#444', va='center', zorder=16,
-            bbox=dict(fc=LEGEND_BG, ec='#CCCCCC', pad=5, boxstyle='round'))
+    # Symbols sub-section
+    sym_y = ly0 - leg_h - 0.5
+    ax.add_patch(mpatches.FancyBboxPatch(
+        (lx0 - 0.12, sym_y - (len(door_legend) + len(win_legend)) * 0.3 - 0.55),
+        leg_w, (len(door_legend) + len(win_legend)) * 0.3 + 0.55,
+        boxstyle='round,pad=0.1', facecolor=LBG, edgecolor='#BBBBBB', lw=0.9, zorder=18))
+    ax.text(lx0 + leg_w/2 - 0.12, sym_y - 0.08, 'Symbols',
+            ha='center', va='top', fontsize=9, fontweight='bold', color='#111', zorder=19)
+    ax.plot([lx0 - 0.1, lx0 + leg_w - 0.15],
+            [sym_y - 0.42, sym_y - 0.42], color='#AAAAAA', lw=0.7, zorder=19)
 
-    # ── Title block ───────────────────────────────────────────────────────
-    title_y = -0.9
-    facing_full = {'N': 'NORTH', 'S': 'SOUTH', 'E': 'EAST', 'W': 'WEST'}.get(
+    all_syms = list(door_legend.items()) + list(win_legend.items())
+    for si, (tag, lbl) in enumerate(all_syms[:12]):
+        sy = sym_y - 0.55 - si * 0.3
+        color = '#333366' if tag.startswith('D') else WIN_C
+        ax.text(lx0 + 0.02, sy, tag, fontsize=7, fontweight='bold', color=color, va='center', zorder=19)
+        ax.text(lx0 + 0.62, sy, lbl[:20], fontsize=6.2, color='#333', va='center', zorder=19)
+
+    # Wall info box
+    info_y = sym_y - (len(door_legend) + len(win_legend)) * 0.3 - 1.1
+    ax.text(lx0 + leg_w/2 - 0.12, info_y,
+            f'Ext. Wall : 230 mm\nInt. Wall  : 115 mm\n\nNet Area:\n{fp.net_w:.1f}m × {fp.net_d:.1f}m\n\nScale  1:50',
+            ha='center', va='top', fontsize=7.5, color='#333', linespacing=1.5,
+            bbox=dict(fc=LBG, ec='#BBBBBB', pad=6, boxstyle='round'), zorder=19)
+
+    # ─── Title block ──────────────────────────────────────────────────────
+    facing_full = {'N':'NORTH','S':'SOUTH','E':'EAST','W':'WEST'}.get(
         fp.facing.upper(), fp.facing.upper())
     title = (f'{fp.bhk}BHK RESIDENCE FLOOR PLAN  –  '
              f'{facing_full} FACING PLOT: {fp.plot_w:.0f}m × {fp.plot_d:.0f}m')
-    ax.text(fp.plot_w / 2, title_y - 0.05, title,
-            ha='center', va='top', fontsize=13, fontweight='bold',
-            color='#111111', zorder=20)
-    ax.text(fp.plot_w / 2, title_y - 0.62, f'{fp.district}, Tamil Nadu, India',
-            ha='center', va='top', fontsize=9, color='#444444', zorder=20)
 
-    # Horizontal rule above title
-    ax.plot([0, fp.plot_w], [-0.62, -0.62], color='#333333',
-            linewidth=1.8, zorder=19)
+    ax.plot([0, fp.plot_w + LEGEND_W], [-0.55, -0.55],
+            color='#333333', lw=2.2, zorder=18)
+    ax.plot([0, fp.plot_w + LEGEND_W], [-0.58, -0.58],
+            color='#333333', lw=0.8, zorder=18)
+    ax.text(fp.plot_w / 2, -0.72, title, ha='center', va='top',
+            fontsize=13, fontweight='bold', color='#111', zorder=20)
+    ax.text(fp.plot_w / 2, -1.35, f'{fp.district}, Tamil Nadu, India',
+            ha='center', va='top', fontsize=9, color='#444', zorder=20)
 
-    # ── Set final axis limits ─────────────────────────────────────────────
-    ax.set_xlim(-1.2, fp.plot_w + LEGEND_W + 0.5)
-    ax.set_ylim(-2.0, fp.plot_d + 1.5)
+    ax.set_xlim(-1.4, fp.plot_w + LEGEND_W + 0.6)
+    ax.set_ylim(-2.2, fp.plot_d + 1.8)
 
     fig.savefig(png_path, dpi=150, facecolor=BG, bbox_inches='tight')
     plt.close(fig)
-    print(f"  PNG exported (direct matplotlib): {png_path}")
+    print(f"  PNG exported (architectural): {png_path}")
 
 
 def render(fp: FloorPlan,
