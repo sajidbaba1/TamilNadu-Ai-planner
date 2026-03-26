@@ -1,0 +1,17 @@
+venv/
+__pycache__/
+*.py[cod]
+.env
+*.log
+*.sqlite
+*.parquet
+*.h5
+*.pkl
+outputs/
+renderer/outputs/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.DS_Store
+thumbs.db

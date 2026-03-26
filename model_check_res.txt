@@ -1,0 +1,10 @@
+FILE: constraint_scorer.pkl (723.7 KB)
+  Class: xgboost.sklearn.XGBClassifier
+  Features (n_features_in_): 74
+  Estimators: 500
+---
+FILE: room_dimensions.h5 (212.5 KB)
+---
+FILE: shap_explainer.pkl (2670.5 KB)
+  Class: shap.explainers._tree.TreeExplainer
+---

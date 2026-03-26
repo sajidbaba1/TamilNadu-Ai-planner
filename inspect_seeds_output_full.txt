@@ -1,0 +1,334 @@
+
+Found 11 CSV files in seeds\ folder
+
+===========================================================================
+FILE : adjacency_rules.csv
+ROWS : 200    COLS : 14
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  rule_id                                  int64        0        1
+  room_a                                   object       0        master_bedroom
+  room_b                                   object       0        toilet_attached
+  relationship                             object       0        MUST_SHARE_WALL
+  reason_code                              object       0        FUNCTIONAL
+  reason_text                              object       0        Attached toilet must share w
+  bhk_applicability                        object       0        1BHK,2BHK,3BHK,4BHK
+  priority                                 int64        0        5
+  door_required                            int64        0        1
+  door_width_m                             float64      133      0.75
+  min_shared_wall_m                        float64      115      1.2
+  facing_dependency                        object       0        ANY
+  vastu_compliance                         int64        0        1
+  nbc_section                              object       174      Part 4, Cl 4.2
+
+===========================================================================
+FILE : baker_principles.csv
+ROWS : 150    COLS : 19
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  principle_id                             int64        0        1
+  principle_name                           object       0        Modified Rat-trap Laterite I
+  category                                 object       0        WALL_CONSTRUCTION
+  description                              object       0        Vertically oriented brick ma
+  application_condition                    object       0        plot_area >= 500 AND climate
+  plot_area_min_sqm                        float64      47       88.0
+  plot_area_max_sqm                        float64      41       799.8
+  climate_zones                            object       0        Hot_Humid
+  applicable_rooms                         object       0        entrance, kitchen
+  wall_thickness_mm                        float64      55       100.0
+  cost_saving_pct                          float64      0        22.0
+  material_saving_pct                      float64      0        6.1
+  thermal_benefit                          object       0        HIGH
+  implementation_detail                    object       0        Place bricks vertically with
+  nbc_compliant                            int64        0        1
+  tncdbr_compliant                         int64        0        0
+  tn_districts_applicable                  object       0        Dharmapuri, Dindigul, Pudukk
+  reference_source                         object       0        Baker 1983, Rural Housing Ma
+  drawing_impact                           object       0        Shows cavity width in sectio
+
+===========================================================================
+FILE : circulation_zones.csv
+ROWS : 50    COLS : 18
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  zone_id                                  int64        0        1
+  zone_name                                object       0        PUBLIC_ZONE
+  rooms_in_zone                            object       0        verandah,living,dining
+  zone_description                         object       0        Entry and social zone direct
+  bhk_applicability                        object       0        1BHK
+  facing_dependency                        object       0        N
+  must_be_accessible_from                  object       6        ENTRY_SEQUENCE
+  must_not_be_accessible_from              object       5        PRIVATE_ZONE,SERVICE_ZONE
+  max_depth_from_entry                     int64        0        1
+  min_zone_width_m                         float64      0        3.0
+  recommended_zone_fraction                float64      0        0.35
+  vastu_zone_name                          object       5        Uttara
+  cross_ventilation_required               int64        0        1
+  natural_light_required                   int64        0        1
+  noise_sensitivity                        object       0        LOW
+  privacy_penetration_rule                 object       0        Visitor from verandah can se
+  drawing_color_hint                       object       0        #E8F5E9
+  typical_tn_arrangement                   object       0        North-facing TN homes place 
+
+===========================================================================
+FILE : climate_data.csv
+ROWS : 180    COLS : 34
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  record_id                                int64        0        1
+  district                                 object       0        Chennai
+  climate_zone                             object       0        Hot_Humid
+  avg_temp_summer_c                        float64      0        33.4
+  avg_temp_winter_c                        float64      0        25.1
+  avg_temp_annual_c                        float64      0        29.6
+  max_temp_c                               float64      0        43.1
+  min_temp_c                               float64      0        17.9
+  annual_rainfall_mm                       int64        0        1338
+  monsoon_months                           object       0        Jun,Jul,Aug,Sep,Oct,Nov,Dec
+  relative_humidity_summer_pct             float64      0        72.9
+  relative_humidity_winter_pct             float64      0        65.7
+  prevailing_wind_direction                object       0        SW
+  prevailing_wind_speed_kmh                float64      0        15.7
+  solar_radiation_kwh_m2_day               float64      0        5.13
+  latitude_degrees                         float64      0        13.0892
+  longitude_degrees                        float64      0        80.2541
+  ecbc_climate_zone                        object       0        Warm-Humid
+  optimal_plot_facing                      object       0        N
+  window_north_score                       float64      0        0.9
+  window_south_score                       float64      0        0.76
+  window_east_score                        float64      0        0.65
+  window_west_score                        float64      0        0.37
+  recommended_overhang_depth_m             float64      0        0.87
+  wall_thickness_recommendation_mm         int64        0        200
+  roof_type_recommendation                 object       0        Mangalore tile over ventilat
+  cross_ventilation_priority               object       0        CRITICAL
+  courtyard_benefit                        object       0        MEDIUM
+  passive_strategy_1                       object       0        Maximize cross-ventilation w
+  passive_strategy_2                       object       0        Elevated plinth with ventila
+  passive_strategy_3                       object       0        Reflective cool roof coating
+  window_to_wall_ratio_recommended         float64      0        0.31
+  floor_plan_orientation_rule              object       0        Orient long axis E-W; place 
+  imd_reference                            object       0        Nungambakkam
+
+===========================================================================
+FILE : entry_sequence_rules.csv
+ROWS : 50    COLS : 22
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  seq_id                                   int64        0        1
+  sequence_step                            int64        0        1
+  space_name                               object       0        Main Gate
+  space_type                               object       0        GATE
+  is_mandatory                             int64        0        1
+  is_optional                              int64        0        0
+  min_depth_m                              float64      0        0.3
+  typical_depth_m                          float64      0        0.6
+  width_relationship                       object       0        SAME_WIDTH
+  visual_termination                       object       0        First view of house facade f
+  privacy_transition                       object       0        PUBLIC → PUBLIC
+  transition_element                       object       0        Gate pillars with name plate
+  facing_n_description                     object       0        Gate on north compound wall 
+  facing_s_description                     object       0        Gate on south compound wall 
+  facing_e_description                     object       0        Gate on east compound wall r
+  facing_w_description                     object       0        Gate on west compound wall w
+  vastu_significance                       object       0        Gate position determined by 
+  traditional_tn_element                   object       0        Compound wall gate with ston
+  modern_adaptation                        object       0        Modern gate uses MS frame wi
+  drawing_annotation                       object       0        GATE ═══
+  bhk_applicability                        object       0        1BHK,2BHK,3BHK,4BHK
+  plot_area_min_sqm                        float64      1        40.0
+
+===========================================================================
+FILE : materials_db.csv
+ROWS : 250    COLS : 29
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  material_id                              int64        0        1
+  material_name                            object       0        Ariyalur Red Brick (Standard
+  material_category                        object       0        MASONRY
+  subcategory                              object       0        Fired Clay Brick
+  application                              object       0        Exterior and interior load-b
+  unit                                     object       0        per_piece
+  cost_per_unit_inr_low                    float64      0        7.0
+  cost_per_unit_inr_high                   float64      0        10.0
+  cost_per_unit_inr_avg                    float64      0        8.5
+  districts_available                      object       0        Ariyalur,Perambalur,Tiruchir
+  districts_expensive                      object       192      Chennai,Kanniyakumari,Nilgir
+  thermal_performance                      object       0        GOOD
+  climate_zone_suitability                 object       0        Hot_Humid,Hot_Dry,Warm_Humid
+  sustainability_rating                    int64        0        3
+  baker_recommended                        int64        0        1
+  local_availability                       object       0        LOCALLY_SOURCED
+  carbon_footprint                         object       0        MEDIUM
+  skill_level_required                     object       0        SEMI_SKILLED
+  typical_thickness_mm                     float64      93       230.0
+  compressive_strength_mpa                 float64      172      7.5
+  thermal_conductivity_w_mk                float64      133      0.81
+  water_resistance                         object       0        AVERAGE
+  maintenance_frequency                    object       0        10_YEARS
+  lifespan_years                           int64        0        80
+  nbc_approved                             int64        0        1
+  is_load_bearing                          float64      180      1.0
+  wall_drawing_color_hex                   object       184      #D4B483
+  hatch_pattern                            object       186      ////
+  notes                                    object       0        Traditional TN brick; soak f
+
+===========================================================================
+FILE : movement_paths.csv
+ROWS : 120    COLS : 16
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  path_id                                  int64        0        1
+  from_space                               object       0        outside
+  to_space                                 object       0        main_gate
+  path_type                                object       0        DIRECT_ENTRY
+  movement_direction                       object       0        BIDIRECTIONAL
+  min_passage_width_m                      float64      27       1.2
+  max_hops_from_entrance                   float64      31       0.0
+  privacy_level                            object       0        PUBLIC
+  bhk_applicability                        object       0        1BHK,2BHK,3BHK,4BHK
+  facing_dependency                        object       0        ANY
+  reason                                   object       0        Main gate is the primary bou
+  nbc_reference                            object       95       NBC 2016 Part 4 Sec 5
+  vastu_basis                              int64        0        0
+  violation_consequence                    object       0        No plot entry point — reside
+  graph_edge_weight                        float64      0        1.0
+  is_critical_path                         int64        0        1
+
+===========================================================================
+FILE : nbc_codes.csv
+ROWS : 154    COLS : 18
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  code_id                                  int64        0        1
+  nbc_section                              object       0        Part 3, Cl 3.4.1
+  code_category                            object       0        ROOM_DIMENSIONS
+  room_type                                object       0        MASTER_BEDROOM
+  parameter_name                           object       0        Minimum floor area
+  min_value                                float64      28       9.5
+  max_value                                float64      138      25.0
+  unit                                     object       0        sqm
+  occupancy_type                           object       0        RESIDENTIAL_GROUP_A1
+  bhk_applicability                        object       0        ALL
+  condition                                object       98       Applicable for EWS/LIG housi
+  enforcement_level                        object       0        MANDATORY
+  penalty_for_violation                    object       0        Plan rejected by sanctioning
+  drawing_requirement                      object       0        Dimension line must show min
+  compliance_check                         object       0        room.area >= 9.5
+  common_violation                         object       0        Master bedroom area reduced 
+  waiver_possible                          int64        0        0
+  tn_local_amendment                       object       126      DTCP TN mandates 10.0 sqm fo
+
+===========================================================================
+FILE : passage_dimensions.csv
+ROWS : 60    COLS : 16
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  dim_id                                   int64        0        1
+  passage_type                             object       0        MAIN_ENTRANCE_DOOR
+  min_clear_width_m                        float64      0        0.9
+  recommended_width_m                      float64      0        1.05
+  max_width_m                              float64      0        1.2
+  min_height_m                             float64      3        2.1
+  recommended_height_m                     float64      3        2.1
+  door_type                                object       0        SWING_SINGLE
+  door_swing_clearance_m                   float64      0        0.9
+  bhk_applicability                        object       0        1BHK
+  nbc_reference                            object       0        NBC 2016 Part 4 Sec 5.3
+  applies_to_floors                        object       0        GROUND_ONLY
+  accessibility_compliant                  int64        0        1
+  drawing_symbol                           object       0        Single line with swing arc 9
+  dimension_annotation                     object       0        900
+  common_tn_practice                       object       0        Tamil Nadu 1BHK homes use si
+
+===========================================================================
+FILE : plot_configurations.csv
+ROWS : 300    COLS : 48
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  config_id                                int64        0        1
+  plot_name                                object       0        3x6m Micro Plot
+  plot_width_m                             float64      0        3.0
+  plot_depth_m                             float64      0        6.0
+  plot_area_sqm                            float64      0        18.0
+  plot_area_cents                          float64      0        0.44
+  plot_area_sqft                           float64      0        193.75
+  facing                                   object       0        N
+  bhk_type                                 object       0        1BHK
+  is_suitable                              int64        0        1
+  suitability_reason                       object       0        Adequate area for compact 1B
+  net_buildable_area_sqm                   float64      0        10.56
+  net_buildable_width_m                    float64      0        2.4
+  net_buildable_depth_m                    float64      0        4.4
+  zone_public_pct                          int64        0        35
+  zone_private_pct                         int64        0        40
+  zone_service_pct                         int64        0        25
+  master_bedroom_target_w                  float64      0        2.7
+  master_bedroom_target_d                  float64      0        3.0
+  bedroom2_target_w                        float64      75       2.4
+  bedroom2_target_d                        float64      75       3.0
+  bedroom3_target_w                        float64      150      2.7
+  bedroom3_target_d                        float64      150      3.3
+  living_target_w                          float64      0        2.7
+  living_target_d                          float64      0        3.0
+  dining_target_w                          float64      24       2.4
+  dining_target_d                          float64      24       2.7
+  kitchen_target_w                         float64      0        1.8
+  kitchen_target_d                         float64      0        2.4
+  toilet_att_target_w                      float64      0        1.2
+  toilet_att_target_d                      float64      0        1.8
+  toilet_common_target_w                   float64      75       1.2
+  toilet_common_target_d                   float64      75       1.5
+  utility_target_w                         float64      112      1.5
+  utility_target_d                         float64      112      1.8
+  verandah_target_w                        float64      0        2.4
+  verandah_target_d                        float64      0        1.2
+  pooja_room_possible                      int64        0        0
+  staircase_possible                       int64        0        0
+  courtyard_possible                       int64        0        0
+  common_in_district                       object       0        Chennai, Coimbatore, Madurai
+  vastu_front_facing                       object       0        North entrance auspicious, m
+  layout_strategy                          object       0        Verandah full N width. Combi
+  typical_use                              object       0        URBAN_RESIDENTIAL
+  road_width_typical_m                     float64      0        3.6
+  fsi_applicable                           float64      0        1.5
+  is_corner_plot                           int64        0        0
+  special_notes                            object       230      Micro plot; single floor onl
+
+===========================================================================
+FILE : tn_setbacks.csv
+ROWS : 120    COLS : 25
+COLUMN NAME                                DTYPE        NULLS    SAMPLE
+---------------------------------------------------------------------------
+  rule_id                                  int64        0        1
+  authority_type                           object       0        CMDA
+  district                                 object       0        Chennai
+  plot_area_min_sqm                        int64        0        0
+  plot_area_max_sqm                        float64      27       30.0
+  road_width_min_m                         float64      88       7.2
+  road_width_max_m                         float64      22       7.2
+  front_setback_m                          float64      0        0.6
+  rear_setback_m                           float64      0        0.6
+  side_setback_left_m                      float64      0        0.0
+  side_setback_right_m                     float64      0        0.0
+  max_height_m                             int64        0        7
+  max_floors                               int64        0        2
+  fsi                                      float64      0        1.5
+  max_ground_coverage_pct                  int64        0        90
+  setback_for_facing_N                     int64        0        1
+  setback_for_facing_S                     int64        0        1
+  setback_for_facing_E                     int64        0        1
+  setback_for_facing_W                     int64        0        1
+  compound_wall_height_max_m               float64      0        1.5
+  parking_requirement                      object       0        Nil for residential plot bel
+  annotation_text                          object       0        SETBACK LINE @ 0.6M FROM FRO
+  regulation_reference                     object       0        TNCDBR 2019 Rule 36(3), Tabl
+  effective_date                           object       0        2019-02-02
+  special_condition                        object       82       One side setback NIL permitt
+
+===========================================================================
+ISSUES FOUND:
+  None. All columns have at least some data.
+
+Done.
+

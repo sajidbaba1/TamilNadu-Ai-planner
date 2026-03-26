@@ -1,0 +1,100 @@
+SECTION 2 - CHECK TABLES
+  OK    adjacency_rules: 200 rows
+  OK    baker_principles: 150 rows
+  OK    circulation_zones: 50 rows
+  OK    climate_data: 180 rows
+  OK    entry_sequence_rules: 50 rows
+  OK    materials_db: 250 rows
+  OK    movement_paths: 120 rows
+  OK    nbc_codes: 154 rows
+  OK    passage_dimensions: 60 rows
+  OK    plot_configurations: 300 rows
+  OK    tn_setbacks: 120 rows
+
+SECTION 3 - CHECK CRITICAL COLUMNS
+  OK    adjacency_rules.room_a: 0% null
+  OK    adjacency_rules.room_b: 0% null
+  OK    adjacency_rules.relationship: 0% null
+  OK    adjacency_rules.priority: 0% null
+  OK    movement_paths.from_space: 0% null
+  OK    movement_paths.to_space: 0% null
+  OK    movement_paths.path_type: 0% null
+  OK    movement_paths.is_critical_path: 0% null
+  OK    movement_paths.graph_edge_weight: 0% null
+  OK    plot_configurations.plot_area_sqm: 0% null
+  OK    plot_configurations.plot_width_m: 0% null
+  OK    plot_configurations.plot_depth_m: 0% null
+  OK    plot_configurations.bhk_type: 0% null
+  OK    plot_configurations.facing: 0% null
+  OK    plot_configurations.layout_strategy: 0% null
+  OK    climate_data.district: 0% null
+  OK    climate_data.climate_zone: 0% null
+  OK    climate_data.window_north_score: 0% null
+  OK    climate_data.window_south_score: 0% null
+  OK    climate_data.window_east_score: 0% null
+  OK    climate_data.window_west_score: 0% null
+  OK    climate_data.floor_plan_orientation_rule: 0% null
+  OK    nbc_codes.code_category: 0% null
+  OK    nbc_codes.room_type: 0% null
+  OK    nbc_codes.parameter_name: 0% null
+  OK    nbc_codes.min_value: 18% null
+  OK    nbc_codes.compliance_check: 0% null
+  OK    tn_setbacks.district: 0% null
+  OK    tn_setbacks.plot_area_min_sqm: 0% null
+  OK    tn_setbacks.front_setback_m: 0% null
+  OK    tn_setbacks.rear_setback_m: 0% null
+  OK    tn_setbacks.side_setback_left_m: 0% null
+  OK    tn_setbacks.side_setback_right_m: 0% null
+  OK    passage_dimensions.passage_type: 0% null
+  OK    passage_dimensions.min_clear_width_m: 0% null
+  OK    passage_dimensions.recommended_width_m: 0% null
+  OK    passage_dimensions.door_type: 0% null
+  OK    passage_dimensions.drawing_symbol: 0% null
+  OK    passage_dimensions.dimension_annotation: 0% null
+  OK    materials_db.material_name: 0% null
+  OK    materials_db.material_category: 0% null
+  OK    materials_db.baker_recommended: 0% null
+  OK    materials_db.climate_zone_suitability: 0% null
+  WARN  materials_db.wall_drawing_color_hex: 74% null
+  WARN  materials_db.hatch_pattern: 74% null
+  OK    baker_principles.principle_name: 0% null
+  OK    baker_principles.category: 0% null
+  OK    baker_principles.drawing_impact: 0% null
+  OK    baker_principles.cost_saving_pct: 0% null
+  OK    circulation_zones.zone_name: 0% null
+  MISS  circulation_zones.privacy_level
+  OK    circulation_zones.recommended_zone_fraction: 0% null
+  OK    circulation_zones.drawing_color_hint: 0% null
+  OK    entry_sequence_rules.sequence_step: 0% null
+  OK    entry_sequence_rules.space_type: 0% null
+  OK    entry_sequence_rules.privacy_transition: 0% null
+  OK    entry_sequence_rules.drawing_annotation: 0% null
+
+SECTION 4 - CRITICAL RULE CHECKS
+  OK    27 FORBIDDEN paths found
+  OK    20 critical paths found
+  OK    BHK types: ['1BHK', '2BHK', '3BHK', '4BHK']
+  OK    38 districts in climate_data
+  OK    master_bedroom-toilet_attached rule exists
+
+SECTION 5 - SAMPLE DATA DISPLAY
+adjacency_rules:
+  ('master_bedroom', 'toilet_attached', 'MUST_SHARE_WALL', 5)
+  ('kitchen', 'master_bedroom', 'MUST_NOT_BE_ADJACENT', 4)
+movement_paths:
+  ('outside', 'main_gate', 'DIRECT_ENTRY', 1)
+  ('main_gate', 'verandah', 'DIRECT_ENTRY', 1)
+climate_data:
+  ('Chennai', 'Hot_Humid', 'N')
+  ('Chennai', 'Hot_Humid', 'NE')
+plot_configurations:
+  (3.0, 6.0, '1BHK', 'N', 'Verandah full N width. Combined living-dining on N side. Bedroom rear with attached toilet. Kitchen adjacent service wall.')
+  (3.0, 6.0, '2BHK', 'N', 'Verandah full N width. Combined living-dining on N side. Bedroom rear with attached toilet. Kitchen adjacent service wall.')
+tn_setbacks:
+  ('Chennai', 0, 0.6, 0.6)
+  ('Chennai', 30, 1.0, 1.0)
+
+===========================================================================
+RESULT: ERRORS FOUND (1) - fix before running generate_training_data.py
+  X  Missing column: circulation_zones.privacy_level
+Fix: check your CSV files and re-run python db\build_db.py
