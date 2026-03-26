@@ -723,43 +723,312 @@ def draw_titleblock(msp, fp, doc):
         msp.add_text(f'{name}: {value:.0%}', dxfattribs={'layer': 'TITLEBLOCK', 'height': 0.16, 'color': 7}).set_placement((lx, ly), align=TextEntityAlignment.LEFT)
         ly -= 0.22
 
-def export_png(dxf_path, png_path):
+def _mpl_rgb(rgb_tuple):
+    """Convert (R,G,B) 0-255 to matplotlib 0-1 tuple."""
+    return tuple(c / 255.0 for c in rgb_tuple)
+
+
+def render_png_direct(fp, png_path):
     """
-    Converts DXF to PNG using ezdxf drawing add-on.
-    Background is set to cream so color=7 (white/black) renders
-    as black - making walls visible.
+    Renders a professional architectural floor plan PNG directly via matplotlib.
+    Includes room fills, walls, labels, dimensions, doors, windows, legend, and title block.
     """
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    from ezdxf.addons.drawing import RenderContext, Frontend
-    from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
-    from ezdxf.addons.drawing.properties import LayoutProperties
+    import matplotlib.patches as mpatches
+    from matplotlib.patches import FancyArrowPatch, Arc
+    from matplotlib.lines import Line2D
+    import numpy as np
 
-    doc = ezdxf.readfile(dxf_path)
-    fig = plt.figure(figsize=(20, 16))
-    ax  = fig.add_axes([0, 0, 1, 1])
-    ax.set_facecolor('#F5F0E8')
+    BG      = '#F5F0E8'
+    WALL_EXT_C = '#1A1A1A'
+    WALL_INT_C = '#444444'
+    DIM_C   = '#333366'
+    LABEL_C = '#111111'
+    DIM_LABEL_C = '#222255'
+    BOUND_C = '#888888'
+    LEGEND_BG = '#FDFDF5'
+
+    rooms_list = list(fp.rooms.values()) if isinstance(fp.rooms, dict) else list(fp.rooms)
+
+    # Canvas: plan area + legend strip on right + title at bottom
+    LEGEND_W = 3.2   # metres equivalent width for legend panel
+    MARGIN   = 1.5   # margin around plot in metres
+    plot_total_w = fp.plot_w + LEGEND_W + MARGIN * 2
+    plot_total_h = fp.plot_d + MARGIN * 2 + 2.5  # +2.5 for title block
+
+    scale = 42  # pixels per metre (for A2-like display)
+
+    fig_w = plot_total_w * scale / 96.0   # inches at 96 dpi; saved at 150 dpi
+    fig_h = plot_total_h * scale / 96.0
+    fig, ax = plt.subplots(figsize=(max(fig_w, 18), max(fig_h, 13)))
+    ax.set_facecolor(BG)
+    fig.patch.set_facecolor(BG)
+    ax.set_aspect('equal')
     ax.axis('off')
-    fig.patch.set_facecolor('#F5F0E8')
 
-    ctx = RenderContext(doc)
-    out = MatplotlibBackend(ax)
+    # Coordinate origin: building starts at (setback_side, setback_rear)
+    ox = fp.setback_side  # x-offset of building net area
+    oy = fp.setback_rear  # y-offset
 
-    # Set background colour so ezdxf knows color=7 = black (not white)
-    # This is the fix that makes walls visible in PNG export
-    layout_props = LayoutProperties.from_layout(doc.modelspace())
-    layout_props.set_colors(bg='#F5F0E8')
-
-    Frontend(ctx, out).draw_layout(
-        doc.modelspace(),
-        layout_properties=layout_props
+    # ── Property boundary (dashed) ─────────────────────────────────────────
+    bnd = mpatches.Rectangle(
+        (0, 0), fp.plot_w, fp.plot_d,
+        linewidth=1.2, edgecolor=BOUND_C, facecolor='none',
+        linestyle='--', zorder=1
     )
+    ax.add_patch(bnd)
+    ax.text(fp.plot_w / 2, fp.plot_d + 0.18, 'Property Boundary',
+            ha='center', va='bottom', fontsize=7, color=BOUND_C, style='italic')
 
-    fig.savefig(png_path, dpi=150,
-                facecolor='#F5F0E8', bbox_inches='tight')
+    # ── Setback dimension arrows ───────────────────────────────────────────
+    def draw_dimension(ax, x1, y1, x2, y2, label, side='top', offset=0.35, color=DIM_C):
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        ax.annotate('', xy=(x2, y2), xytext=(x1, y1),
+                    arrowprops=dict(arrowstyle='<->', color=color, lw=1.0))
+        lx, ly = mx, my
+        if side == 'top':    ly += offset
+        elif side == 'bot':  ly -= offset
+        elif side == 'left': lx -= offset
+        elif side == 'right':lx += offset
+        ax.text(lx, ly, label, ha='center', va='center', fontsize=7.5,
+                color=color, fontweight='bold',
+                bbox=dict(fc=BG, ec='none', pad=1))
+
+    # Overall plot dimensions (outside boundary)
+    draw_dimension(ax, 0, fp.plot_d + 0.6, fp.plot_w, fp.plot_d + 0.6,
+                   f'{fp.plot_w:.0f}m', side='top', offset=0.18, color=DIM_C)
+    draw_dimension(ax, -0.65, 0, -0.65, fp.plot_d,
+                   f'{fp.plot_d:.0f}m', side='left', offset=0.2, color=DIM_C)
+
+    # Setback labels
+    ax.text(fp.plot_w / 2, oy * 0.5, f'Sides / Rear {fp.setback_rear:.0f}m',
+            ha='center', va='center', fontsize=6.5, color=BOUND_C)
+    ax.text(fp.plot_w / 2, fp.plot_d - fp.setback_front * 0.5,
+            f'Front {fp.setback_front:.0f}m',
+            ha='center', va='center', fontsize=6.5, color=BOUND_C)
+
+    # Wall thickness labels
+    ax.text(ox, fp.plot_d + 0.08, '230mm', ha='center', va='bottom',
+            fontsize=5.5, color='#555555')
+    ax.text(ox + WALL_EXT_T * 3, fp.plot_d + 0.08, '115mm',
+            ha='center', va='bottom', fontsize=5.5, color='#777777')
+
+    # ── Room fills ────────────────────────────────────────────────────────
+    for room in rooms_list:
+        rgb = ROOM_RGB.get(room.room_type, (248, 248, 248))
+        patch = mpatches.Rectangle(
+            (ox + room.x, oy + room.y), room.width, room.depth,
+            facecolor=_mpl_rgb(rgb), edgecolor='none', zorder=2
+        )
+        ax.add_patch(patch)
+
+    # ── Interior walls ────────────────────────────────────────────────────
+    for wall in fp.walls:
+        lw = 5.0 if wall.wall_type == 'exterior' else 2.5
+        col = WALL_EXT_C if wall.wall_type == 'exterior' else WALL_INT_C
+        ax.plot([ox + wall.x1, ox + wall.x2], [oy + wall.y1, oy + wall.y2],
+                color=col, linewidth=lw, solid_capstyle='butt', zorder=5)
+
+    # ── Exterior boundary rectangle ───────────────────────────────────────
+    net_rect = mpatches.Rectangle(
+        (ox, oy), fp.net_w, fp.net_d,
+        linewidth=5.0, edgecolor=WALL_EXT_C, facecolor='none', zorder=6
+    )
+    ax.add_patch(net_rect)
+
+    # ── Doors ─────────────────────────────────────────────────────────────
+    door_labels_used = {}
+    for i, door in enumerate(fp.doors):
+        wall = door.wall
+        dx = ox + wall.x1 + door.position * (wall.x2 - wall.x1)
+        dy = oy + wall.y1 + door.position * (wall.y2 - wall.y1)
+        tag = f'D{i + 1}'
+        door_labels_used[tag] = door.label or door.door_type
+
+        if wall.direction == 'H':
+            # Door opening gap (white strip)
+            ax.plot([dx - door.width / 2, dx + door.width / 2],
+                    [dy, dy], color=BG, linewidth=8, zorder=7)
+            # Swing arc
+            hinge_x = dx - door.width / 2
+            arc = Arc((hinge_x, dy), door.width * 2, door.width * 2,
+                      angle=0, theta1=0, theta2=90,
+                      color='#555577', linewidth=1.0, zorder=8)
+            ax.add_patch(arc)
+            ax.plot([hinge_x, hinge_x + door.width], [dy, dy],
+                    color='#555577', linewidth=1.2, zorder=8)
+            ax.text(dx, dy + 0.18, tag, ha='center', va='bottom',
+                    fontsize=6, color='#222244', fontweight='bold', zorder=9)
+        else:
+            ax.plot([dx, dx], [dy - door.width / 2, dy + door.width / 2],
+                    color=BG, linewidth=8, zorder=7)
+            hinge_y = dy - door.width / 2
+            arc = Arc((dx, hinge_y), door.width * 2, door.width * 2,
+                      angle=0, theta1=0, theta2=90,
+                      color='#555577', linewidth=1.0, zorder=8)
+            ax.add_patch(arc)
+            ax.plot([dx, dx], [hinge_y, hinge_y + door.width],
+                    color='#555577', linewidth=1.2, zorder=8)
+            ax.text(dx + 0.18, dy, tag, ha='left', va='center',
+                    fontsize=6, color='#222244', fontweight='bold', zorder=9)
+
+    # ── Windows ───────────────────────────────────────────────────────────
+    win_labels_used = {}
+    for i, win in enumerate(fp.windows):
+        wall = win.wall
+        wx = ox + wall.x1 + win.position * (wall.x2 - wall.x1)
+        wy = oy + wall.y1 + win.position * (wall.y2 - wall.y1)
+        tag = f'W{i + 1}'
+        win_labels_used[tag] = 'Window'
+        t = wall.thickness / 2.0
+        if wall.direction == 'H':
+            for off in [-t, 0, t]:
+                ax.plot([wx - win.width / 2, wx + win.width / 2],
+                        [wy + off, wy + off], color='#3366AA',
+                        linewidth=1.3, zorder=8)
+            # White gap in wall
+            ax.plot([wx - win.width / 2, wx + win.width / 2],
+                    [wy, wy], color='#B8D4F0', linewidth=5, zorder=7)
+            ax.text(wx, wy + 0.25, tag, ha='center', va='bottom',
+                    fontsize=6, color='#3355AA', fontweight='bold', zorder=9)
+        else:
+            for off in [-t, 0, t]:
+                ax.plot([wx + off, wx + off],
+                        [wy - win.width / 2, wy + win.width / 2],
+                        color='#3366AA', linewidth=1.3, zorder=8)
+            ax.plot([wx, wx], [wy - win.width / 2, wy + win.width / 2],
+                    color='#B8D4F0', linewidth=5, zorder=7)
+            ax.text(wx + 0.25, wy, tag, ha='left', va='center',
+                    fontsize=6, color='#3355AA', fontweight='bold', zorder=9)
+
+    # ── Room labels + dimensions ──────────────────────────────────────────
+    for room in rooms_list:
+        cx = ox + room.x + room.width / 2.0
+        cy = oy + room.y + room.depth / 2.0
+        label = ROOM_LABELS.get(room.room_type,
+                                 room.room_type.replace('_', ' ').upper())
+        area_min = room.width * room.depth
+        fs_label = 8.5 if area_min >= 10 else 6.5 if area_min >= 4 else 5.5
+        fs_dim   = 7.0 if area_min >= 10 else 5.5 if area_min >= 4 else 4.5
+
+        # Bold room name
+        ax.text(cx, cy + 0.12, label,
+                ha='center', va='center',
+                fontsize=fs_label, fontweight='bold', color=LABEL_C,
+                multialignment='center', zorder=10,
+                wrap=True)
+        # Dimension below
+        dim_text = f'{room.width:.1f}m x {room.depth:.1f}m'
+        ax.text(cx, cy - 0.22, dim_text,
+                ha='center', va='center',
+                fontsize=fs_dim, color=DIM_LABEL_C, zorder=10)
+
+    # ── Internal room dimension lines ─────────────────────────────────────
+    for room in rooms_list:
+        if room.width * room.depth < 3:
+            continue
+        rx, ry = ox + room.x, oy + room.y
+        rw, rd = room.width, room.depth
+        # Horizontal dimension (top of room)
+        draw_dimension(ax, rx + 0.05, ry + rd + 0.25,
+                       rx + rw - 0.05, ry + rd + 0.25,
+                       f'{rw:.1f}m', side='top', offset=0.13, color='#444488')
+
+    # ── North Arrow ───────────────────────────────────────────────────────
+    na_x = fp.plot_w + LEGEND_W * 0.5
+    na_y = fp.plot_d + 0.3
+    r = 0.55
+    ax.add_patch(mpatches.Circle((na_x, na_y), r, fill=False,
+                                  edgecolor='#222', linewidth=1.5, zorder=20))
+    ax.annotate('', xy=(na_x, na_y + r * 0.8), xytext=(na_x, na_y - r * 0.15),
+                arrowprops=dict(arrowstyle='->', color='#111',
+                                lw=2.5, mutation_scale=14), zorder=21)
+    tri_x = [na_x - 0.15, na_x, na_x + 0.15, na_x - 0.15]
+    tri_y = [na_y, na_y + r * 0.85, na_y, na_y]
+    ax.fill(tri_x, tri_y, color='#111111', zorder=22)
+    ax.text(na_x, na_y + r + 0.12, 'N', ha='center', va='bottom',
+            fontsize=13, fontweight='bold', color='#111', zorder=22)
+
+    # ── Legend panel ──────────────────────────────────────────────────────
+    lx0 = fp.plot_w + ox + 0.4
+    ly0 = fp.plot_d - 0.4
+
+    legend_items = []
+    seen_types = []
+    for room in rooms_list:
+        if room.room_type not in seen_types:
+            seen_types.append(room.room_type)
+            rgb = ROOM_RGB.get(room.room_type, (248, 248, 248))
+            short = room.room_type.replace('_', ' ').title()[:8]
+            legend_items.append((short, rgb))
+
+    # Background for legend
+    leg_h = len(legend_items) * 0.42 + 0.8
+    leg_w = LEGEND_W - 0.6
+    leg_rect = mpatches.FancyBboxPatch(
+        (lx0 - 0.1, ly0 - leg_h), leg_w, leg_h,
+        boxstyle='round,pad=0.08', facecolor=LEGEND_BG,
+        edgecolor='#AAAAAA', linewidth=0.8, zorder=15
+    )
+    ax.add_patch(leg_rect)
+    ax.text(lx0 + leg_w / 2 - 0.1, ly0 - 0.05, 'LEGEND',
+            ha='center', va='top', fontsize=9, fontweight='bold',
+            color='#111111', zorder=16)
+
+    for ki, (short, rgb) in enumerate(legend_items):
+        item_y = ly0 - 0.55 - ki * 0.42
+        swatch = mpatches.Rectangle((lx0, item_y - 0.15), 0.35, 0.32,
+                                     facecolor=_mpl_rgb(rgb),
+                                     edgecolor='#444', linewidth=0.7, zorder=16)
+        ax.add_patch(swatch)
+        ax.text(lx0 + 0.44, item_y + 0.01, short,
+                va='center', fontsize=7, color='#222', zorder=16)
+
+    # Door/Window legend
+    ly_dw = ly0 - leg_h - 0.5
+    ax.text(lx0 + leg_w / 2 - 0.1, ly_dw, 'Symbols',
+            ha='center', va='top', fontsize=8, fontweight='bold',
+            color='#111111', zorder=16)
+    sym_items = list(door_labels_used.items()) + list(win_labels_used.items())
+    for si, (tag, lbl) in enumerate(sym_items[:10]):
+        sy = ly_dw - 0.35 - si * 0.32
+        ax.text(lx0, sy, tag, fontsize=7, fontweight='bold',
+                color='#333366', va='center', zorder=16)
+        ax.text(lx0 + 0.55, sy, lbl[:14], fontsize=6.5,
+                color='#333', va='center', zorder=16)
+
+    # ── Wall thickness callout ─────────────────────────────────────────────
+    ax.text(fp.plot_w + ox + 0.4, oy + fp.net_d / 2 - 0.5,
+            f'Ext. Wall: 230mm\nInt. Wall: 115mm\n\nNet Area:\n'
+            f'{fp.net_w:.1f}m × {fp.net_d:.1f}m\n\nScale 1:50',
+            fontsize=7, color='#444', va='center', zorder=16,
+            bbox=dict(fc=LEGEND_BG, ec='#CCCCCC', pad=5, boxstyle='round'))
+
+    # ── Title block ───────────────────────────────────────────────────────
+    title_y = -0.9
+    facing_full = {'N': 'NORTH', 'S': 'SOUTH', 'E': 'EAST', 'W': 'WEST'}.get(
+        fp.facing.upper(), fp.facing.upper())
+    title = (f'{fp.bhk}BHK RESIDENCE FLOOR PLAN  –  '
+             f'{facing_full} FACING PLOT: {fp.plot_w:.0f}m × {fp.plot_d:.0f}m')
+    ax.text(fp.plot_w / 2, title_y - 0.05, title,
+            ha='center', va='top', fontsize=13, fontweight='bold',
+            color='#111111', zorder=20)
+    ax.text(fp.plot_w / 2, title_y - 0.62, f'{fp.district}, Tamil Nadu, India',
+            ha='center', va='top', fontsize=9, color='#444444', zorder=20)
+
+    # Horizontal rule above title
+    ax.plot([0, fp.plot_w], [-0.62, -0.62], color='#333333',
+            linewidth=1.8, zorder=19)
+
+    # ── Set final axis limits ─────────────────────────────────────────────
+    ax.set_xlim(-1.2, fp.plot_w + LEGEND_W + 0.5)
+    ax.set_ylim(-2.0, fp.plot_d + 1.5)
+
+    fig.savefig(png_path, dpi=150, facecolor=BG, bbox_inches='tight')
     plt.close(fig)
-    print(f"  PNG exported: {png_path}")
+    print(f"  PNG exported (direct matplotlib): {png_path}")
 
 
 def render(fp: FloorPlan,
@@ -769,11 +1038,13 @@ def render(fp: FloorPlan,
     Returns dict: {'dxf': path, 'png': path}
     """
     orig_rooms = fp.rooms
-    if isinstance(fp.rooms, dict):
-        fp.rooms = list(fp.rooms.values())
+    rooms_list = list(fp.rooms.values()) if isinstance(fp.rooms, dict) else list(fp.rooms)
+    fp.rooms = rooms_list
 
     try:
         os.makedirs(output_dir, exist_ok=True)
+
+        # ── Save DXF (CAD format) ──────────────────────────────────────────
         doc, msp = setup_doc(fp)
         draw_boundary(msp, fp)
         draw_room_fills(msp, fp)
@@ -783,15 +1054,16 @@ def render(fp: FloorPlan,
         draw_windows(msp, fp)
         draw_annotations(msp, fp)
         draw_titleblock(msp, fp, doc)
-    
+
         dxf_path = os.path.join(
             output_dir,
             f'plan_{fp.district}_{fp.bhk}BHK_{fp.facing}.dxf')
         doc.saveas(dxf_path)
-    
+
+        # ── Save PNG via direct matplotlib renderer ────────────────────────
         png_path = dxf_path.replace('.dxf', '.png')
-        export_png(dxf_path, png_path)
-    
+        render_png_direct(fp, png_path)
+
         return {'dxf': dxf_path, 'png': png_path}
     finally:
         fp.rooms = orig_rooms
