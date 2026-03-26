@@ -2,7 +2,10 @@ import os, sqlite3, time, warnings, math
 import numpy as np
 import pandas as pd
 import joblib
-import tensorflow as tf
+try:
+    import tensorflow as tf
+except ImportError:
+    tf = None
 from dataclasses import dataclass, field
 from typing import Optional, List, Tuple
 warnings.filterwarnings('ignore')
@@ -735,8 +738,11 @@ class ModelLoader:
                 'shap': os.path.join(MODELS_DIR, 'shap_explainer.pkl'),
             }
             missing = any(not os.path.exists(p) for p in paths.values())
-            if missing:
-                print('Using Mock Models (files missing)')
+            if missing or tf is None:
+                if tf is None:
+                    print('Using Mock Models (tensorflow not installed)')
+                else:
+                    print('Using Mock Models (files missing)')
                 cls._clf = MockClassifier()
                 cls._dim_model = MockDimModel()
                 cls._explainer = MockExplainer()
