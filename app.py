@@ -50,11 +50,16 @@ if st.sidebar.button("🏗️ Generate Floor Plan", type="primary"):
 
                 ground_fp = res["ground"]
                 first_fp  = res["first"]        # None if floors == 1
-                render_res = render(ground_fp, output_dir="outputs")
+                second_fp = res.get("second")
+                render_res = render(ground_fp, output_dir="outputs", suffix="ground")
 
                 first_render_res = None
                 if first_fp is not None:
-                    first_render_res = render(first_fp, output_dir="outputs")
+                    first_render_res = render(first_fp, output_dir="outputs", suffix="first")
+                    
+                second_render_res = None
+                if second_fp is not None:
+                    second_render_res = render(second_fp, output_dir="outputs", suffix="second")
 
                 st.success("✅ Plan generated successfully!")
 
@@ -62,7 +67,34 @@ if st.sidebar.button("🏗️ Generate Floor Plan", type="primary"):
 
                 # ── Floor plan image(s) ────────────────────────────────────────────
                 with col_img:
-                    if first_render_res is not None:
+                    if second_render_res is not None:
+                        tab_g, tab_f, tab_s = st.tabs(["🏠 Ground Floor (G)", "🏢 First Floor (G+1)", "☁️ Second Floor (G+2)"])
+
+                        with tab_g:
+                            st.image(render_res["png"], caption="Ground Floor Plan", use_container_width=True)
+                            c1, c2 = st.columns(2)
+                            with open(render_res["png"], "rb") as fh:
+                                c1.download_button("⬇ PNG (Ground)", fh, file_name="ground_floor.png", mime="image/png")
+                            with open(render_res["dxf"], "rb") as fh:
+                                c2.download_button("⬇ DXF (Ground)", fh, file_name="ground_floor.dxf", mime="application/octet-stream")
+
+                        with tab_f:
+                            st.image(first_render_res["png"], caption="First Floor Plan (G+1)", use_container_width=True)
+                            c3, c4 = st.columns(2)
+                            with open(first_render_res["png"], "rb") as fh:
+                                c3.download_button("⬇ PNG (First)", fh, file_name="first_floor.png", mime="image/png")
+                            with open(first_render_res["dxf"], "rb") as fh:
+                                c4.download_button("⬇ DXF (First)", fh, file_name="first_floor.dxf", mime="application/octet-stream")
+                                
+                        with tab_s:
+                            st.image(second_render_res["png"], caption="Second Floor Plan (G+2)", use_container_width=True)
+                            c5, c6 = st.columns(2)
+                            with open(second_render_res["png"], "rb") as fh:
+                                c5.download_button("⬇ PNG (Second)", fh, file_name="second_floor.png", mime="image/png")
+                            with open(second_render_res["dxf"], "rb") as fh:
+                                c6.download_button("⬇ DXF (Second)", fh, file_name="second_floor.dxf", mime="application/octet-stream")
+                                
+                    elif first_render_res is not None:
                         tab_g, tab_f = st.tabs(["🏠 Ground Floor (G)", "🏢 First Floor (G+1)"])
 
                         with tab_g:

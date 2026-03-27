@@ -1243,7 +1243,8 @@ def render_png_direct(fp, png_path):
 
 
 def render(fp: FloorPlan,
-           output_dir: str = 'outputs') -> dict:
+           output_dir: str = 'outputs',
+           suffix: str = 'ground') -> dict:
     """
     Main render function.
     Returns dict: {'dxf': path, 'png': path}
@@ -1268,7 +1269,7 @@ def render(fp: FloorPlan,
 
         dxf_path = os.path.join(
             output_dir,
-            f'plan_{fp.district}_{fp.bhk}BHK_{fp.facing}.dxf')
+            f'plan_{fp.district}_{fp.bhk}BHK_{fp.facing}_{suffix}.dxf')
         doc.saveas(dxf_path)
 
         # ── Save PNG via direct matplotlib renderer ────────────────────────

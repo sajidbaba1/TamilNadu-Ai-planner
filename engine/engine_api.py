@@ -451,6 +451,10 @@ def generate_plan(
     first_fp = None
     if floors >= 2:
         first_fp = _generate_first_floor(ground_fp)
+        
+    second_fp = None
+    if floors >= 3:
+        second_fp = copy.deepcopy(first_fp)
 
     # Convert fp.rooms from List[Room] → dict[room_type, Room] on both floors.
     # This is the public API contract: callers use rooms.keys() / rooms.get().
@@ -459,6 +463,8 @@ def generate_plan(
     ground_fp.rooms = {r.room_type: r for r in ground_fp.rooms}
     if first_fp is not None:
         first_fp.rooms = {r.room_type: r for r in first_fp.rooms}
+    if second_fp is not None:
+        second_fp.rooms = {r.room_type: r for r in second_fp.rooms}
 
     # Collect all 7 scores from the ground floor
     scores = {
@@ -491,6 +497,7 @@ def generate_plan(
     return {
         "ground": ground_fp,
         "first": first_fp,
+        "second": second_fp,
         "scores": scores,
         "metadata": metadata,
     }
