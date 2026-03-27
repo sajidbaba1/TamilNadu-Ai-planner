@@ -29,6 +29,7 @@ ROOM_RGB = {
     'pooja':           (250, 235, 218),  # Peach/Cream
     'store':           (230, 222, 206),
     'staircase':       (250, 250, 247),
+    'corridor':        (250, 250, 247),
 }
 
 ROOM_LABELS = {
@@ -46,6 +47,7 @@ ROOM_LABELS = {
     'pooja':           'North-East\nPUJA',
     'store':           'STORE',
     'staircase':       'STAIRCASE',
+    'corridor':        'PASSAGE',
 }
 
 TOL = 0.08

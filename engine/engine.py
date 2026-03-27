@@ -39,6 +39,7 @@ NBC_MIN_AREA = {
     'bedroom_4': 7.5, 'living': 9.5, 'dining': 5.0,
     'kitchen': 4.5, 'toilet_attached': 2.5, 'toilet_common': 2.5,
     'utility': 2.0, 'verandah': 4.0, 'pooja': 1.2, 'store': 2.0,
+    'corridor': 1.0,
 }
 
 NBC_MIN_WIDTH = {
@@ -46,7 +47,7 @@ NBC_MIN_WIDTH = {
     'bedroom_4': 2.1, 'living': 2.4, 'kitchen': 1.8,
     'toilet_attached': 1.2, 'toilet_common': 1.2,
     'verandah': 1.5, 'utility': 1.0, 'dining': 1.8,
-    'staircase': 1.0,
+    'staircase': 1.0, 'corridor': 1.0,
 }
 
 ROOM_UNIVERSE = [
@@ -69,6 +70,7 @@ HARDCODED_DEFAULTS = {
     "verandah": (0.0, 1.5),
     "pooja": (1.2, 1.2),
     "store": (1.5, 1.2),
+    "corridor": (1.2, 1.2),
 }
 
 ROOM_ZONE = {
@@ -225,6 +227,7 @@ def _place_rooms(net_w, net_d, bhk, t, rng, facing="N", err_p=0.05, floors=1):
         "pooja": {"min_area": 1.5, "min_width": 1.0},
         "store": {"min_area": 2.0, "min_width": 1.0},
         "staircase": {"min_area": 2.5, "min_width": 1.0},
+        "corridor": {"min_area": 1.2, "min_width": 1.0},
     }
 
     def target_area(rt):
@@ -479,14 +482,25 @@ def _place_rooms(net_w, net_d, bhk, t, rng, facing="N", err_p=0.05, floors=1):
     private_rooms = ["master_bedroom"]
     if "toilet_attached" in rooms:
         private_rooms.append("toilet_attached")
+    
+    # Insert central corridor for circulation before remaining bedrooms (if any)
+    has_corridor = len([r for r in ("bedroom_2", "bedroom_3", "bedroom_4") if r in rooms]) > 0
+    # On very narrow plots (net_w < 7m), inserting a formal 1.0m corridor room causes fit issues. 
+    # Skip formal physical corridor room if plot is narrow, the remaining width acts as circulation.
+    if has_corridor and net_w > 7.1:
+        private_rooms.append("corridor")
+        
     for rt in ("bedroom_2", "bedroom_3", "bedroom_4"):
         if rt in rooms:
             private_rooms.append(rt)
 
     desired_widths = {}
     for rt in private_rooms:
-        w, _ = scaled_dims(rt)
-        desired_widths[rt] = round(w, 2)
+        if rt == "corridor":
+            desired_widths[rt] = 1.20   # 1.2m central spinal corridor
+        else:
+            w, _ = scaled_dims(rt)
+            desired_widths[rt] = round(w, 2)
 
     total_private_w = sum(desired_widths.values())
     if total_private_w > net_w and total_private_w > 0:
@@ -496,6 +510,13 @@ def _place_rooms(net_w, net_d, bhk, t, rng, facing="N", err_p=0.05, floors=1):
         for rt in private_rooms:
             desired_widths[rt] = max(desired_widths[rt], room_rules[rt]["min_width"])
         total_after = sum(desired_widths.values())
+        if total_after > net_w:
+            # If we inserted a corridor but don't have enough width, shrink the corridor before shrinking bedrooms.
+            if "corridor" in desired_widths:
+                over = float(total_after - net_w)
+                corr_shrink = min(desired_widths["corridor"], over)
+                desired_widths["corridor"] = round(desired_widths["corridor"] - corr_shrink, 2)
+                total_after = sum(desired_widths.values())
         if total_after > net_w:
             # Allow tiny overshoot caused by per-room rounding; shrink the last room to fit.
             overshoot = float(total_after - net_w)
@@ -508,7 +529,7 @@ def _place_rooms(net_w, net_d, bhk, t, rng, facing="N", err_p=0.05, floors=1):
 
     total_private_w = sum(desired_widths.values())
     if total_private_w < net_w and total_private_w > 0:
-        growables = [rt for rt in private_rooms if rt != "toilet_attached"]
+        growables = [rt for rt in private_rooms if rt not in ("toilet_attached", "corridor")]
         extra_w = round(net_w - total_private_w, 2)
         per_room_add = round(extra_w / max(len(growables), 1), 2)
         for rt in growables:
@@ -537,6 +558,10 @@ def _place_rooms(net_w, net_d, bhk, t, rng, facing="N", err_p=0.05, floors=1):
             _ta_nbc = NBC_MIN_AREA.get('toilet_attached', 2.5)
             _min_d_nbc = round(_ta_nbc * 0.90 / max(w, 0.1), 2)
             d = round(max(b4_h * 0.55, _min_d_nbc, 0.8), 2)
+        elif rt == "corridor":
+            # Corridor goes deep enough to connect living (b2) into the bedroom zone (b4)
+            d = round(b4_h * 0.6, 2)
+            y_off = round(b4_h - d, 2)   # anchored against band 3 top
         elif rt in ("bedroom_2", "bedroom_3", "bedroom_4"):
             # Bedrooms extend to the top of the private band (minus stagger offset).
             d = round(max(b4_h - y_off, 0.8), 2)
