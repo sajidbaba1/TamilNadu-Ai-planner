@@ -864,8 +864,49 @@ def render_png_direct(fp, png_path):
         lw=4.5, edgecolor=WALL_DARK, facecolor='none', zorder=6))
 
     # ─── Furniture symbols ────────────────────────────────────────────────
-    def frect(x, y, w, d, fc='#DDDDCC', ec='#777766', lw=0.7, z=11):
-        ax.add_patch(mpatches.Rectangle((x,y), w, d,
+    # Pre-compute door swing exclusion zones per room (room-local coords)
+    # so furniture is never placed inside the sweep arc of any door.
+    _door_zones = {}   # room_type → list of (local_cx, local_cy, clear_r)
+    for door in fp.doors:
+        wall = door.wall
+        dc_x = wall.x1 + door.position * (wall.x2 - wall.x1)
+        dc_y = wall.y1 + door.position * (wall.y2 - wall.y1)
+        # Find which room this door serves (find room that owns the wall)
+        for room in rooms_list:
+            rx, ry = room.x, room.y
+            rw2, rd2 = room.width, room.depth
+            # Door centre must be on or very near a boundary of this room
+            on_h = (abs(dc_y - ry) < 0.2 or abs(dc_y - (ry + rd2)) < 0.2) and (rx - 0.05 <= dc_x <= rx + rw2 + 0.05)
+            on_v = (abs(dc_x - rx) < 0.2 or abs(dc_x - (rx + rw2)) < 0.2) and (ry - 0.05 <= dc_y <= ry + rd2 + 0.05)
+            if on_h or on_v:
+                local_cx = dc_x - rx
+                local_cy = dc_y - ry
+                clear_r  = door.width + 0.3      # swing radius + 30 cm safety
+                zones = _door_zones.setdefault(room.room_type, [])
+                zones.append((local_cx, local_cy, clear_r))
+
+    def _in_door_zone(room, fx, fy, fw, fd):
+        """Return True if rect (fx,fy,fw,fd) in room-local coords overlaps any door zone."""
+        zones = _door_zones.get(room.room_type, [])
+        for (zx, zy, zr) in zones:
+            # Check if any corner of the furniture rect is inside the circle
+            for cx in (fx, fx + fw):
+                for cy in (fy, fy + fd):
+                    if (cx - zx) ** 2 + (cy - zy) ** 2 < zr ** 2:
+                        return True
+            # Also check if circle centre is inside the rect
+            if fx <= zx <= fx + fw and fy <= zy <= fy + fd:
+                return True
+        return False
+
+    def frect(x, y, w, d, fc='#DDDDCC', ec='#777766', lw=0.7, z=11, room=None):
+        # x, y are absolute coords; convert to room-local if room given
+        if room is not None:
+            loc_x = x - (ox + room.x)
+            loc_y = y - (oy + room.y)
+            if _in_door_zone(room, loc_x, loc_y, w, d):
+                return   # skip — would block doorway
+        ax.add_patch(mpatches.Rectangle((x, y), w, d,
             facecolor=fc, edgecolor=ec, linewidth=lw, zorder=z))
 
     def fcircle(cx, cy, r, fc='#CCCCBB', ec='#777766', z=11):
@@ -873,6 +914,7 @@ def render_png_direct(fp, png_path):
             facecolor=fc, edgecolor=ec, linewidth=0.7, zorder=z))
 
     for room in rooms_list:
+
         x0 = ox + room.x + 0.1
         y0 = oy + room.y + 0.1
         rw = room.width - 0.2
@@ -885,83 +927,84 @@ def render_png_direct(fp, png_path):
             bx = x0 + (rw - bw) / 2
             by = y0 + rd - bd
             # Bed frame
-            frect(bx, by, bw, bd, fc='#E8E2D5', ec='#665544', lw=1.0, z=11)
+            frect(bx, by, bw, bd, fc='#E8E2D5', ec='#665544', lw=1.0, z=11, room=room)
             # Headboard
-            frect(bx, by + bd - 0.3, bw, 0.3, fc='#C8B898', ec='#665544', lw=0.8, z=12)
+            frect(bx, by + bd - 0.3, bw, 0.3, fc='#C8B898', ec='#665544', lw=0.8, z=12, room=room)
             # Pillows
-            frect(bx + 0.12, by + bd - 0.28, bw * 0.38, 0.22, fc='#F8F5EE', ec='#AAAAAA', lw=0.5, z=13)
-            frect(bx + bw * 0.5 + 0.02, by + bd - 0.28, bw * 0.38, 0.22, fc='#F8F5EE', ec='#AAAAAA', lw=0.5, z=13)
+            frect(bx + 0.12, by + bd - 0.28, bw * 0.38, 0.22, fc='#F8F5EE', ec='#AAAAAA', lw=0.5, z=13, room=room)
+            frect(bx + bw * 0.5 + 0.02, by + bd - 0.28, bw * 0.38, 0.22, fc='#F8F5EE', ec='#AAAAAA', lw=0.5, z=13, room=room)
             # Side table
-            frect(x0, by + bd * 0.4, 0.4, 0.4, fc='#D4C8B0', ec='#665544', lw=0.5, z=11)
+            frect(x0, by + bd * 0.4, 0.4, 0.4, fc='#D4C8B0', ec='#665544', lw=0.5, z=11, room=room)
             # Wardrobe
             if rw > 3.0:
-                frect(x0, y0, min(rw, 1.5), 0.6, fc='#D0C4A0', ec='#665544', lw=0.8, z=11)
+                frect(x0, y0, min(rw, 1.5), 0.6, fc='#D0C4A0', ec='#665544', lw=0.8, z=11, room=room)
 
         elif rt in ('living', 'dining'):
-            # 3-seater sofa
+            # 3-seater sofa (placed away from door side, towards opposite wall)
             sw = min(rw * 0.65, 2.2)
-            frect(x0, y0, sw, 0.85, fc='#D8D0C0', ec='#776655', lw=0.9, z=11)
-            frect(x0, y0 + 0.62, sw, 0.25, fc='#C8BCA8', ec='#776655', lw=0.5, z=12)
+            sofa_y = y0 + rd - 0.85   # push sofa to far wall, away from door
+            frect(x0, sofa_y, sw, 0.85, fc='#D8D0C0', ec='#776655', lw=0.9, z=11, room=room)
+            frect(x0, sofa_y + 0.62, sw, 0.25, fc='#C8BCA8', ec='#776655', lw=0.5, z=12, room=room)
             # Seat cushions
             for ci in range(3):
-                frect(x0 + ci * sw/3 + 0.05, y0 + 0.08, sw/3 - 0.1, 0.5,
-                      fc='#E0D8C8', ec='#998877', lw=0.4, z=13)
+                frect(x0 + ci * sw/3 + 0.05, sofa_y + 0.08, sw/3 - 0.1, 0.5,
+                      fc='#E0D8C8', ec='#998877', lw=0.4, z=13, room=room)
             # Side sofa
-            frect(x0 + sw + 0.15, y0, 0.85, min(rd * 0.45, 1.4), fc='#D8D0C0', ec='#776655', lw=0.9, z=11)
-            # Coffee table
-            frect(x0 + 0.3, y0 + 1.0, sw - 0.6, 0.55, fc='#B8A888', ec='#665544', lw=0.8, z=11)
-            # TV unit (opposite wall)
-            frect(x0 + rw - 0.45, y0 + 0.3, 0.4, min(rd - 0.6, 1.6), fc='#C8C0B0', ec='#665544', lw=0.6, z=11)
+            frect(x0 + sw + 0.15, sofa_y - 0.5, 0.85, min(rd * 0.45, 1.4), fc='#D8D0C0', ec='#776655', lw=0.9, z=11, room=room)
+            # Coffee table (centre of room)
+            frect(x0 + 0.3, sofa_y - 0.65, sw - 0.6, 0.55, fc='#B8A888', ec='#665544', lw=0.8, z=11, room=room)
+            # TV unit (near entrance wall)
+            frect(x0 + rw - 0.45, y0 + 0.3, 0.4, min(rd - 0.6, 1.6), fc='#C8C0B0', ec='#665544', lw=0.6, z=11, room=room)
             # Dining table (if large enough)
             if rd > 3.0 and rt == 'dining':
                 tx = x0 + (rw - 1.2) / 2
-                ty = y0 + rd - 1.3
-                frect(tx, ty, 1.2, 0.75, fc='#B8A878', ec='#665544', lw=0.9, z=11)
+                ty = y0 + 0.5
+                frect(tx, ty, 1.2, 0.75, fc='#B8A878', ec='#665544', lw=0.9, z=11, room=room)
                 for ci in range(3):
-                    frect(tx + ci * 0.35 + 0.05, ty - 0.28, 0.28, 0.28, fc='#D4C8A8', ec='#887766', lw=0.4, z=12)
-                    frect(tx + ci * 0.35 + 0.05, ty + 0.75, 0.28, 0.28, fc='#D4C8A8', ec='#887766', lw=0.4, z=12)
+                    frect(tx + ci * 0.35 + 0.05, ty - 0.28, 0.28, 0.28, fc='#D4C8A8', ec='#887766', lw=0.4, z=12, room=room)
+                    frect(tx + ci * 0.35 + 0.05, ty + 0.75, 0.28, 0.28, fc='#D4C8A8', ec='#887766', lw=0.4, z=12, room=room)
 
         elif rt == 'kitchen':
-            # L-shaped counter (dark granite)
-            frect(x0, y0 + rd - 0.6, rw, 0.6, fc='#555555', ec='#333333', lw=0.8, z=11)
-            frect(x0, y0, 0.6, rd, fc='#555555', ec='#333333', lw=0.8, z=11)
-            # Sink
+            # L-shaped counter along top and left walls (away from door)
+            frect(x0, y0 + rd - 0.6, rw, 0.6, fc='#555555', ec='#333333', lw=0.8, z=11, room=room)
+            frect(x0, y0, 0.6, rd - 0.6, fc='#555555', ec='#333333', lw=0.8, z=11, room=room)
+            # Sink (far corner)
             frect(x0 + rw - 0.7, y0 + rd - 0.55, 0.6, 0.45, fc='#888888', ec='#555', lw=0.6, z=12)
             fcircle(x0 + rw - 0.4, y0 + rd - 0.33, 0.1, fc='#AAAAAA', z=13)
             # Stove burners
             for bx2, by2 in [(x0+0.1, y0+rd-0.52), (x0+0.1, y0+rd-0.15)]:
                 fcircle(bx2 + 0.15, by2 + 0.08, 0.13, fc='#666666', ec='#444', z=12)
             # Refrigerator
-            frect(x0 + rw - 0.65, y0, 0.55, 0.7, fc='#DDDDDD', ec='#999', lw=0.6, z=11)
+            frect(x0 + rw - 0.65, y0, 0.55, 0.7, fc='#DDDDDD', ec='#999', lw=0.6, z=11, room=room)
 
         elif rt in ('toilet_attached', 'toilet_common'):
-            # WC (isometric oval seat)
+            # WC placed on far wall (away from door)
             wc_x = x0 + rw / 2 - 0.2; wc_y = y0 + rd - 0.55
-            frect(wc_x, wc_y, 0.4, 0.22, fc='#EEEEEE', ec='#999', lw=0.6, z=12)
+            frect(wc_x, wc_y, 0.4, 0.22, fc='#EEEEEE', ec='#999', lw=0.6, z=12, room=room)
             ax.add_patch(mpatches.Ellipse((wc_x + 0.2, wc_y + 0.28), 0.38, 0.26,
                          facecolor='#F8F8F8', edgecolor='#AAAAAA', lw=0.7, zorder=12))
-            # Wash basin
-            bs_x = x0 + 0.05; bs_y = y0 + 0.08
-            frect(bs_x, bs_y, 0.42, 0.38, fc='#E8E8E8', ec='#888', lw=0.6, z=12)
+            # Wash basin (near entrance side but not blocking)
+            bs_x = x0 + 0.05; bs_y = y0 + rd * 0.35
+            frect(bs_x, bs_y, 0.42, 0.38, fc='#E8E8E8', ec='#888', lw=0.6, z=12, room=room)
             ax.add_patch(mpatches.Ellipse((bs_x + 0.21, bs_y + 0.19), 0.3, 0.22,
                          facecolor='#F5F5F5', edgecolor='#AAAAAA', lw=0.5, zorder=13))
             fcircle(bs_x + 0.21, bs_y + 0.19, 0.06, fc='#CCCCCC', z=14)
 
         elif rt == 'verandah':
-            # Chairs
-            frect(x0 + 0.1, y0 + 0.1, 0.45, 0.45, fc='#D4C8A0', ec='#776655', lw=0.6, z=11)
-            frect(x0 + rw - 0.55, y0 + 0.1, 0.45, 0.45, fc='#D4C8A0', ec='#776655', lw=0.6, z=11)
+            # Chairs (cane chairs)
+            frect(x0 + 0.1, y0 + 0.1, 0.45, 0.45, fc='#D4C8A0', ec='#776655', lw=0.6, z=11, room=room)
+            frect(x0 + rw - 0.55, y0 + 0.1, 0.45, 0.45, fc='#D4C8A0', ec='#776655', lw=0.6, z=11, room=room)
             # Small table
-            frect(x0 + rw/2 - 0.22, y0 + 0.12, 0.44, 0.4, fc='#C4B890', ec='#665544', lw=0.7, z=12)
+            frect(x0 + rw/2 - 0.22, y0 + 0.12, 0.44, 0.4, fc='#C4B890', ec='#665544', lw=0.7, z=12, room=room)
 
         elif rt == 'staircase':
-            # Treads
-            n_treads = max(6, int(rw / 0.28))
-            tw = rw / n_treads
+            # Stair treads (drawn bottom-up, ascending)
+            n_treads = max(8, int(rd / 0.25))
+            th = rd / n_treads
             for ti in range(n_treads):
-                shade = 0.82 - ti * 0.04
-                frect(x0 + ti * tw, y0, tw, rd,
-                      fc=(shade, shade, shade - 0.05), ec='#888', lw=0.3, z=11)
+                shade = 0.88 - ti * 0.04
+                frect(x0, y0 + ti * th, rw, th,
+                      fc=(shade, shade, shade - 0.04), ec='#999', lw=0.3, z=11)
             # Stair arrow
             ax.annotate('', xy=(x0 + rw - 0.1, y0 + rd/2),
                         xytext=(x0 + 0.1, y0 + rd/2),

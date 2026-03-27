@@ -415,12 +415,13 @@ def _place_rooms(net_w, net_d, bhk, t, rng, facing="N", err_p=0.05, floors=1):
         # so kitchen placement is unaffected.
         stair_placed_w = 0.0
         if floors >= 2:
-            _stair_w = 1.0
-            _stair_d = 2.5
+            _stair_w = 1.2   # NBC min stair width for residential = 1.2m
+            _stair_d = 3.0   # ~12 treads × 250mm each (NBC compliant)
             _stair_x = tc_w
             if try_add("staircase", _stair_x, y_b3, _stair_w, _stair_d,
                         0.0, net_w, y_b3, y_b2):
                 stair_placed_w = _stair_w
+
 
         cluster_x = round(tc_w + stair_placed_w, 2)
         cluster_w = round(max(net_w - cluster_x, 0.0), 2)
